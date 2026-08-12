@@ -275,7 +275,7 @@ body.night-open{ overflow:hidden; overscroll-behavior:none; }
 /* 토큰 — 나가 있는 무기 */
 .token{
   position:absolute; width:40px; margin-left:-20px; z-index:8;
-  transition:top .55s cubic-bezier(.34,1.25,.64,1), left .55s cubic-bezier(.34,1.25,.64,1), opacity .4s;
+  transition:top .42s cubic-bezier(.34,1.25,.64,1), left .42s cubic-bezier(.34,1.25,.64,1), opacity .32s;
   text-align:center; pointer-events:none;
 }
 .token__glyph{
@@ -286,7 +286,7 @@ body.night-open{ overflow:hidden; overscroll-behavior:none; }
 }
 .token__glyph svg{ width:21px; height:21px; }
 .token__step{ font-family:var(--font-mono); font-size:7.5px; color:var(--ink-dim); margin-top:2px; letter-spacing:.04em; }
-.token.jump .token__glyph{ animation:tokenJump .42s cubic-bezier(.34,1.5,.64,1); }
+.token.jump .token__glyph{ animation:tokenJump .32s cubic-bezier(.34,1.5,.64,1); }
 @keyframes tokenJump{ 0%{ transform:translateY(0);} 40%{ transform:translateY(-7px) scale(1.06);} 100%{ transform:translateY(0);} }
 .token.gone{ opacity:0; }
 
@@ -554,9 +554,16 @@ body.night-open{ overflow:hidden; overscroll-behavior:none; }
 .loan-card{
   width:186px; background:var(--bg-card); border:1px solid var(--line-metal);
   border-radius:5px; overflow:hidden; box-shadow:0 10px 26px rgba(0,0,0,.55);
+  flex:0 0 186px;
 }
-.loan-card--big{ width:212px; }
-.loan-card--big .loan-card--big .loan-card--big .loan-card--big .loan-half{ display:flex; align-items:center; gap:11px; padding:13px 12px; }
+.loan-card--big{ width:212px; flex-basis:212px; }
+.loan-said{
+  min-height:39px; padding:9px 12px 8px;
+  border-bottom:1px dashed var(--line-metal); background:rgba(0,0,0,.2);
+  font-size:11px; line-height:1.5; color:var(--ink);
+  display:flex; align-items:center;
+}
+.loan-half{ display:flex; align-items:center; gap:11px; padding:13px 12px; }
 .loan-half__ico{ width:42px; height:42px; flex-shrink:0; }
 .loan-half__txt{ min-width:0; flex:1; }
 .loan-half__name{ font-family:var(--font-display); font-size:15px; line-height:1.2; }
@@ -572,6 +579,16 @@ body.night-open{ overflow:hidden; overscroll-behavior:none; }
   font-size:9.5px; color:var(--ink-dim); text-align:center;
   padding:8px 10px 11px; border-top:1px dashed var(--line-metal);
 }
+.loan-card__foot--split{
+  min-height:43px; display:flex; align-items:center; justify-content:space-between;
+  gap:8px; text-align:left;
+}
+.loan-card__place{ font-family:var(--font-display); font-size:12.5px; line-height:1.25; }
+.loan-card__wait{ font-family:var(--font-mono); font-size:8.5px; letter-spacing:.02em; text-align:right; }
+.loan-card--map{ scroll-snap-align:start; transition:border-color .15s, transform .15s; }
+.loan-card--map[data-tok]{ cursor:pointer; }
+.loan-card--map[data-tok]:active{ transform:scale(.985); }
+.loan-card--map[data-tok]:hover{ border-color:var(--grade-unique); }
 .loan-card--big .loan-card__foot{ font-size:11px; padding:9px 10px 12px; }
 
 /* ── 합체 리빌 ── */
@@ -691,36 +708,24 @@ body.night-open{ overflow:hidden; overscroll-behavior:none; }
 .ldrawer__count{ flex:1; font-family:var(--font-mono); font-size:9.5px; color:var(--ink); }
 .ldrawer__chev{ font-size:10px; color:var(--ink-dim); transition:transform .35s; }
 .ldrawer.open .ldrawer__chev{ transform:rotate(180deg); }
-.ldrawer__body{ padding:0 12px 14px; overflow-y:auto; max-height:300px; }
+.ldrawer__body{ padding:0 0 14px; overflow:hidden; }
 .ldrawer__body::-webkit-scrollbar{ display:none; }
 
-/* 서랍 안의 대여 행 */
+/* 서랍 안의 대여 카드 — 접객에서 생성되는 카드와 같은 형태 */
+.loans__group{ overflow:hidden; }
 .loans__k{
   font-family:var(--font-mono); font-size:9px; letter-spacing:.16em; color:var(--ink-dim);
-  margin:10px 0 7px; padding-bottom:5px; border-bottom:1px solid var(--line-metal);
+  margin:10px 12px 7px; padding-bottom:5px; border-bottom:1px solid var(--line-metal);
 }
 .loans__none{ text-align:center; color:var(--ink-dim); font-size:12px; padding:34px 20px; line-height:1.7; }
-.loanrow{
-  background:var(--bg-card); border:1px solid var(--line-metal); border-radius:5px;
-  margin-bottom:8px; overflow:hidden;
+.loans__rail{
+  display:flex; gap:10px; overflow-x:auto; overflow-y:hidden;
+  padding:0 12px 12px; scroll-padding-inline:12px;
+  scroll-snap-type:x proximity; touch-action:pan-x; overscroll-behavior-x:contain;
+  -webkit-overflow-scrolling:touch;
 }
-.loanrow[data-tok]{ cursor:pointer; transition:border-color .15s; }
-.loanrow[data-tok]:hover{ border-color:var(--grade-unique); }
-.loanrow__said{
-  font-size:11px; color:var(--ink); padding:9px 12px 8px;
-  border-bottom:1px dashed var(--line-metal); background:rgba(0,0,0,.2); line-height:1.5;
-}
-.loanrow__body{ display:flex; align-items:center; gap:8px; padding:10px 12px; }
-.loanrow__ico{ width:26px; height:26px; flex-shrink:0; }
-.loanrow__txt{ flex:1; min-width:0; }
-.loanrow__name{ font-family:var(--font-display); font-size:13px; }
-.loanrow__sub{ font-size:9px; color:var(--ink-dim); margin-top:1px; }
-.loanrow__foot{
-  display:flex; align-items:baseline; justify-content:space-between; gap:8px;
-  padding:7px 12px 9px; border-top:1px solid var(--line-metal);
-  font-family:var(--font-display); font-size:12.5px;
-}
-.loanrow__wait{ font-family:var(--font-mono); font-size:9.5px; color:var(--ink-dim); letter-spacing:.04em; }
+.loans__rail::after{ content:''; flex:0 0 2px; }
+.loans__rail::-webkit-scrollbar{ display:none; }
 
 /* ══ [§css.page] 상점 · 개봉 — 각각 한 화면 ══
    서랍이 아니라 페이지다. 지도를 가리지 않고, 지도를 대신한다. */
@@ -1856,30 +1861,11 @@ function closeMergeToMap(h, w, react){
 }
 
 function makeLoanCard(h, w, big){
-  const g = GRADE[w.grade];
   const el = document.createElement('div');
-  el.className = 'loan-card' + (big?' loan-card--big':'');
-  const seamW = big?212:186;
-  el.innerHTML = `
-    <div class="loan-said">${h._sp ? h._sp.clue : ''}</div>
-    <div class="loan-half">
-      <div class="loan-half__ico" style="color:${h.accent}">${ICON.hero}</div>
-      <div class="loan-half__txt">
-        <div class="loan-half__name">${h.name}</div>
-        <div class="loan-half__sub">${h.dispo} · 숙련 ${h.skill}</div>
-      </div>
-    </div>
-    ${crackSVG(w.id+'-seam'+(big?'-big':''), seamW, 'loan-seam')}
-    <div class="loan-half">
-      <div class="loan-half__ico" style="color:${g.c}">${WSIL[w.type]}</div>
-      <div class="loan-half__txt">
-        <div class="loan-half__name">${w.name}</div>
-        <div class="loan-half__sub">${g.l} · 취성 ${w.brit}%</div>
-      </div>
-      <div class="loan-half__num">${w.atk}</div>
-    </div>
-    <div class="loan-card__foot">저녁에 길을 오른다</div>`;
-  return el;
+  el.innerHTML = loanCardHTML({
+    hero:h, weapon:w, said:h._sp ? h._sp.clue : '', state:'pending'
+  }, { big });
+  return el.firstElementChild;
 }
 
 let closingShown = false;
@@ -2009,30 +1995,32 @@ function closePeek(){
 
 /* ═══════════ [§scr.ldrawer] 지도 하단 대여 카드 영역 ═══════════
    지도를 여는 목적 자체가 이 목록을 보는 것이다 — 기본값으로 펼쳐진다.
-   행을 누르면 그 토큰이 있는 높이로 지도가 움직인다.
+   카드를 누르면 그 토큰이 있는 높이로 지도가 움직인다.
    목록과 지도가 같은 것을 가리키게 만든다.               */
 function renderLoansDrawer(){
   const n = S.out.length + S.pending.length;
   $('ldrawerCount').textContent = n ? `${n}자루` : '';
 
-  const pend = S.pending.map(p => loanRowHTML({
+  const pend = S.pending.map(p => loanCardHTML({
     hero:p.hero, weapon:p.weapon, said:p.said, state:'pending'
-  }));
+  }, { map:true }));
   const out = S.out.slice().sort((a,b)=>
     (DUNGEONS[a.dungeon].turns - a.elapsed) - (DUNGEONS[b.dungeon].turns - b.elapsed)
-  ).map(o => loanRowHTML({
+  ).map(o => loanCardHTML({
     id:o.id, hero:o.hero, weapon:o.weapon, said:o.said, state:'out',
     dungeon:o.dungeon, left:DUNGEONS[o.dungeon].turns - o.elapsed, ago:S.day - o.dispatchDay
-  }));
+  }, { map:true }));
 
   $('ldrawerBody').innerHTML = n ? `
-    ${pend.length ? `<div class="loans__k">오늘 건넸다 — 저녁에 길을 오른다</div>${pend.join('')}` : ''}
-    ${out.length  ? `<div class="loans__k">길 위에 있다</div>${out.join('')}` : ''}
+    <section class="loans__group">
+      <div class="loans__k">대여 카드 · 좌우로 넘겨 본다</div>
+      <div class="loans__rail">${pend.join('')}${out.join('')}</div>
+    </section>
   ` : `<div class="loans__none">지금 나가 있는 것이 없다.</div>`;
 
-  $('ldrawerBody').querySelectorAll('.loanrow[data-tok]').forEach(row=>{
-    row.onclick = ()=>{
-      const o = S.out.find(x=>x.id === row.dataset.tok);
+  $('ldrawerBody').querySelectorAll('.loan-card[data-tok]').forEach(card=>{
+    card.onclick = ()=>{
+      const o = S.out.find(x=>x.id === card.dataset.tok);
       if(!o) return;
       scrollToY(tokenY(o) + 16);
       const t = document.getElementById('tok-'+o.id);
@@ -2050,29 +2038,37 @@ function toggleDrawer(force){
    지금 남의 손에 있는 것들. 결과는 어디에도 없다.
    오늘 건넨 것은 아직 출발하지 않았고, 목적지도 알 수 없다.
    길에 오른 뒤에야 어디로 갔는지 드러난다.            */
-function loanRowHTML(o){
+function loanCardHTML(o, options={}){
+  const { big=false, map=false } = options;
   const g = GRADE[o.weapon.grade];
   const D = o.dungeon ? DUNGEONS[o.dungeon] : null;
-  return `<div class="loanrow"${o.id ? ` data-tok="${o.id}"` : ''}>
-    <div class="loanrow__said">${o.said || ''}</div>
-    <div class="loanrow__body">
-      <span class="loanrow__ico" style="color:${o.hero.accent}">${ICON.hero}</span>
-      <div class="loanrow__txt">
-        <div class="loanrow__name">${o.hero.name}</div>
-        <div class="loanrow__sub">${o.hero.dispo} · 숙련 ${o.hero.skill}</div>
-      </div>
-      <span class="loanrow__ico" style="color:${g.c}">${WSIL[o.weapon.type]}</span>
-      <div class="loanrow__txt">
-        <div class="loanrow__name">${o.weapon.name}</div>
-        <div class="loanrow__sub">${g.l} · 취성 ${o.weapon.brit}%</div>
+  const seamW = big ? 212 : 186;
+  const seed = `${o.weapon.id}-seam-${o.id || o.hero.name}-${big?'big':'base'}`;
+  const foot = o.state === 'out'
+    ? `<div class="loan-card__foot loan-card__foot--split">
+         <span class="loan-card__place" style="color:${D.accent}">${o.dungeon}</span>
+         <span class="loan-card__wait">${o.left>0 ? `${dayWord(o.left)} 남았다` : '오늘 돌아온다'}<br>${o.ago}일째</span>
+       </div>`
+    : `<div class="loan-card__foot">저녁에 길을 오른다</div>`;
+  return `<div class="loan-card${big?' loan-card--big':''}${map?' loan-card--map':''}"${o.id ? ` data-tok="${o.id}"` : ''}>
+    <div class="loan-said">${o.said || ''}</div>
+    <div class="loan-half">
+      <div class="loan-half__ico" style="color:${o.hero.accent}">${ICON.hero}</div>
+      <div class="loan-half__txt">
+        <div class="loan-half__name">${o.hero.name}</div>
+        <div class="loan-half__sub">${o.hero.dispo} · 숙련 ${o.hero.skill}</div>
       </div>
     </div>
-    <div class="loanrow__foot">
-      ${o.state === 'pending'
-        ? `<span class="loanrow__wait">아직 문 앞에 있다</span>`
-        : `<span style="color:${D.accent}">${o.dungeon}</span>
-           <span class="loanrow__wait">${o.left>0 ? `${dayWord(o.left)} 남았다` : '오늘 돌아온다'} · ${o.ago}일째</span>`}
+    ${crackSVG(seed, seamW, 'loan-seam')}
+    <div class="loan-half">
+      <div class="loan-half__ico" style="color:${g.c}">${WSIL[o.weapon.type]}</div>
+      <div class="loan-half__txt">
+        <div class="loan-half__name">${o.weapon.name}</div>
+        <div class="loan-half__sub">${g.l} · 취성 ${o.weapon.brit}%</div>
+      </div>
+      <div class="loan-half__num">${o.weapon.atk}</div>
     </div>
+    ${foot}
   </div>`;
 }
 
@@ -2533,6 +2529,13 @@ function sealedHTML(sl, i){
    §5  파견(느리게) → 진행(툭툭) → 귀환(빠르게) → 정적
    지도는 "몇 장이 돌아왔는가"까지만 말하고 입을 다문다.        */
 let outId = 0;
+const TOKEN_MOTION = {
+  stagger:190,
+  dispatch:780,
+  step:380,
+  arrive:540,
+  jump:330
+};
 function runSequence(){
   S.phase = 'seq'; renderPanel();
   setPanel(true);                        // 시퀀스 동안은 지도가 화면 전부를 쓴다
@@ -2556,21 +2559,21 @@ function runSequence(){
   // 파견은 상점에서 시작한다 — 시선을 아래에 고정
   setTimeout(scrollToShop, 420);
 
-  // 새 토큰을 상점 위치에서 만든 뒤 자리로 올려보낸다 — 느리고 무겁게
+  // 새 토큰을 상점 위치에서 만든 뒤 자리로 올려보낸다
   dispatched.forEach((o,k)=>{
     const el = document.createElement('div');
     el.className='token'; el.id='tok-'+o.id;
     el.style.setProperty('--accent', GRADE[o.weapon.grade].c);
     el.style.left = LANE_X[DUNGEONS[o.dungeon].lane]+'px';
     el.style.top  = SHOP_Y+'px'; el.style.opacity='0';
-    el.style.transition = 'top 1.05s cubic-bezier(.4,.15,.2,1), opacity .5s';
+    el.style.transition = `top ${TOKEN_MOTION.dispatch}ms cubic-bezier(.4,.15,.2,1), opacity .36s`;
     el.innerHTML = `<div class="token__glyph">${WSIL[o.weapon.type]}</div>
                     <div class="token__step">0/${DUNGEONS[o.dungeon].turns}</div>`;
     $('mapInner').appendChild(el);
-    setTimeout(()=>{ el.style.opacity='1'; el.style.top = tokenY(o)+'px'; }, 500 + k*260);
+    setTimeout(()=>{ el.style.opacity='1'; el.style.top = tokenY(o)+'px'; }, 420 + k*TOKEN_MOTION.stagger);
   });
 
-  const dispatchTime = dispatched.length ? 1750 + dispatched.length*260 : 500;
+  const dispatchTime = dispatched.length ? 1350 + dispatched.length*TOKEN_MOTION.stagger : 420;
 
   // 문을 연 순간 하루가 흘렀다. 곧바로 다음 날이 온다.
   setTimeout(nextDay, dispatchTime + 700);
@@ -2596,23 +2599,23 @@ function runArrival(){
         const arrived = o.elapsed >= D.turns;
         scrollToY(tokenY(o));                     // 움직이는 것을 따라간다
         el.style.transition = arrived
-          ? 'top .72s cubic-bezier(.4,.15,.2,1)'  // 던전으로 빨려 들어가듯
-          : 'top .5s cubic-bezier(.34,1.25,.64,1)';
+          ? `top ${TOKEN_MOTION.arrive}ms cubic-bezier(.4,.15,.2,1)`  // 던전으로 빨려 들어가듯
+          : `top ${TOKEN_MOTION.step}ms cubic-bezier(.34,1.25,.64,1)`;
         el.classList.add('jump');
         el.querySelector('.token__step').textContent = `${o.elapsed}/${D.turns}`;
         el.style.top = tokenY(o) + 'px';          // 도착 턴에는 던전 카드 안까지 간다
-        setTimeout(()=>el.classList.remove('jump'), 440);
+        setTimeout(()=>el.classList.remove('jump'), TOKEN_MOTION.jump);
         if(arrived){
           setTimeout(()=>{
             el.classList.add('inside');
             const node = [...document.querySelectorAll('.dnode')]
               .find(n=>n.dataset.name===o.dungeon);
             if(node){ node.classList.add('swallow'); setTimeout(()=>node.classList.remove('swallow'),1150); }
-          }, 480);
+          }, 380);
         }
-      }, k*260);
+      }, k*TOKEN_MOTION.stagger);
     });
-    const advanceTime = moving.length*260 + 900;
+    const advanceTime = moving.length*TOKEN_MOTION.stagger + 720;
 
     setTimeout(()=>{
       const arriving = S.out.filter(o=>o.elapsed >= DUNGEONS[o.dungeon].turns);

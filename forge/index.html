@@ -49,7 +49,7 @@
   [규율]  core 구획의 함수는 document / $() 를 쓰지 않는다.
           Vite 이관 시 core 는 그대로 잘라 붙일 수 있어야 한다.
 
-  [미착수]  forge 3단계 → §scr.page 의 '벼린다' 버튼
+  [구현]    제작소 → 재료 3개 선택 팝업 → 벼리기
 ════════════════════════════════════════════════════════════════
 -->
 <html lang="ko">
@@ -748,6 +748,12 @@ body.night-open{ overflow:hidden; overscroll-behavior:none; }
 .page__body{ flex:1; overflow-y:auto; padding:14px 14px 6px; }
 .page__body::-webkit-scrollbar{ display:none; }
 .page__acts{ flex-shrink:0; padding:8px 14px 16px; display:flex; gap:9px; }
+.page-back{
+  width:100%; padding:11px 14px; border:1px solid var(--line-metal); border-radius:5px;
+  background:var(--bg-card); color:var(--ink); font-family:var(--font-display); font-size:13px;
+  cursor:pointer; transition:border-color .15s, background .15s;
+}
+.page-back:hover{ border-color:var(--grade-unique); background:#2c2219; }
 .page__k{
   font-family:var(--font-mono); font-size:9px; letter-spacing:.18em; color:var(--ink-dim);
   margin:2px 0 8px; padding-bottom:5px; border-bottom:1px solid var(--line-metal);
@@ -792,6 +798,13 @@ body.night-open{ overflow:hidden; overscroll-behavior:none; }
 .gcard__bar i{ display:block; height:100%; border-radius:2px; }
 .gcard__brit{ font-family:var(--font-mono); font-size:8.5px; color:var(--ink-dim); margin-top:5px; }
 .gcard__brit b{ color:var(--dur-low); font-weight:700; }
+.gcard__repair{
+  width:calc(100% - 14px); margin:0 7px 8px; padding:7px 5px;
+  border:1px solid var(--line-metal); border-radius:4px; background:rgba(0,0,0,.22);
+  color:var(--ink); font-family:var(--font-mono); font-size:9px; cursor:pointer;
+}
+.gcard__repair:not(:disabled):hover{ border-color:var(--dur-high); }
+.gcard__repair:disabled{ opacity:.38; cursor:default; }
 
 .armory__empty{
   text-align:center; color:var(--ink-dim); font-size:11.5px; line-height:1.8;
@@ -821,8 +834,13 @@ body.night-open{ overflow:hidden; overscroll-behavior:none; }
 .mats__note{ font-family:var(--font-mono); font-size:9.5px; color:var(--ink-dim); margin-top:9px; letter-spacing:.04em; }
 .mats__note b{ color:var(--ink); font-weight:700; }
 
-/* ── 상점의 두 문 — 벼리거나, 맞이하거나 ── */
+/* ── 상점의 세 공간 — 무기고, 제작소, 문열기 ── */
+.shop-hub__intro{
+  margin:2px 0 15px; padding:13px 14px; border-left:2px solid var(--grade-unique);
+  background:rgba(201,150,63,.05); color:var(--ink-dim); font-size:11px; line-height:1.65;
+}
 .doors{ margin-top:24px; display:flex; flex-direction:column; gap:9px; }
+.doors--hub{ margin-top:0; }
 .door{
   display:flex; align-items:center; gap:12px; padding:14px 14px;
   background:var(--bg-card); border:1px solid var(--line-metal); border-radius:5px;
@@ -838,23 +856,85 @@ body.night-open{ overflow:hidden; overscroll-behavior:none; }
 .door__s{ font-size:10.5px; color:var(--ink-dim); margin-top:2px; }
 .door__go{ font-size:19px; color:var(--ink-dim); flex-shrink:0; }
 .door--shut{ opacity:.42; pointer-events:none; }
+.workshop-create{
+  margin-top:18px; display:flex; align-items:center; gap:12px; width:100%; padding:14px;
+  border:1px solid var(--grade-unique); border-radius:5px; background:#302318; color:var(--ink);
+  cursor:pointer; text-align:left;
+}
+.workshop-create:disabled{ opacity:.38; border-color:var(--line-metal); cursor:default; }
+.workshop-create__ico{ width:28px; height:28px; color:var(--grade-unique); flex-shrink:0; }
+.workshop-create__ico svg{ width:100%; height:100%; }
+.workshop-create__title{ display:block; font-family:var(--font-display); font-size:15px; }
+.workshop-create__sub{ display:block; color:var(--ink-dim); font-size:10px; margin-top:2px; }
 
-/* 나가 있는 것 — 그가 한 말이 그대로 남는다 */
-.gone{
-  background:var(--bg-card); border:1px solid var(--line-metal); border-radius:4px;
-  margin-bottom:7px; overflow:hidden;
+/* ── 제작소 — 재료 세 가지를 고른 뒤 벼린다 ── */
+.forge-popup{
+  position:absolute; inset:0; z-index:36; padding:18px 14px;
+  display:flex; align-items:center; justify-content:center;
+  background:rgba(8,6,5,.82); backdrop-filter:blur(3px);
+  opacity:0; pointer-events:none; transition:opacity .22s;
 }
-.gone__said{
-  font-size:11px; color:var(--ink); padding:8px 11px 7px; line-height:1.5;
-  border-bottom:1px dashed var(--line-metal); background:rgba(0,0,0,.2);
+.forge-popup.on{ opacity:1; pointer-events:auto; }
+.forge-popup__panel{
+  width:100%; max-height:calc(100% - 16px); overflow-y:auto;
+  background:linear-gradient(160deg,#2c231b,#1b1612);
+  border:1px solid var(--line-metal); border-radius:8px;
+  box-shadow:0 18px 50px rgba(0,0,0,.65);
+  transform:translateY(12px) scale(.985); transition:transform .24s cubic-bezier(.34,1.25,.64,1);
 }
-.gone__row{ display:flex; align-items:center; gap:6px; padding:8px 11px; }
-.gone__ico{ width:19px; height:19px; flex-shrink:0; }
-.gone__who{ font-family:var(--font-display); font-size:12px; }
-.gone__when{
-  margin-left:auto; font-family:var(--font-mono); font-size:9.5px;
-  color:var(--ink-dim); letter-spacing:.04em; flex-shrink:0;
+.forge-popup.on .forge-popup__panel{ transform:none; }
+.forge-popup__head{ display:flex; align-items:flex-start; gap:10px; padding:17px 16px 12px; }
+.forge-popup__ico{ width:28px; height:28px; color:var(--grade-unique); flex-shrink:0; }
+.forge-popup__ico svg{ width:100%; height:100%; }
+.forge-popup__title{ font-family:var(--font-display); font-size:18px; }
+.forge-popup__sub{ font-size:10.5px; color:var(--ink-dim); margin-top:3px; line-height:1.45; }
+.forge-popup__close{
+  margin-left:auto; width:30px; height:30px; border:0; border-radius:4px;
+  background:rgba(255,255,255,.04); color:var(--ink-dim); font-size:20px; cursor:pointer;
 }
+.forge-slots{ display:grid; grid-template-columns:repeat(3,1fr); gap:7px; padding:0 16px 14px; }
+.forge-slot{
+  min-width:0; height:65px; border:1px dashed var(--line-metal); border-radius:5px;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px;
+  color:var(--ink-dim); background:rgba(0,0,0,.16); cursor:default;
+}
+.forge-slot.filled{ border-style:solid; border-color:var(--mc); color:var(--ink); cursor:pointer; }
+.forge-slot__gem{ width:16px; height:16px; background:var(--mc); box-shadow:0 0 8px var(--mc); }
+.forge-slot__gem.tier1{ clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%); }
+.forge-slot__gem.tier2{ clip-path:polygon(50% 0,93% 25%,93% 75%,50% 100%,7% 75%,7% 25%); }
+.forge-slot__gem.tier3{ clip-path:polygon(50% 0,100% 38%,81% 100%,19% 100%,0 38%); }
+.forge-slot__name{ max-width:100%; padding:0 4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:10px; }
+.forge-slot__num{ font-family:var(--font-mono); font-size:9px; }
+.forge-popup__k{ font-family:var(--font-mono); font-size:8.5px; letter-spacing:.14em; color:var(--ink-dim); padding:0 16px 7px; }
+.forge-materials{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; padding:0 16px 16px; }
+.forge-mat{
+  position:relative; display:flex; align-items:center; gap:8px; min-width:0;
+  padding:10px 9px; border:1px solid var(--line-metal); border-radius:5px;
+  background:rgba(0,0,0,.2); color:var(--ink); cursor:pointer;
+  transition:border-color .15s, background .15s, transform .15s;
+}
+.forge-mat:active{ transform:scale(.98); }
+.forge-mat.selected{ border-color:var(--mc); background:rgba(255,255,255,.035); }
+.forge-mat.exhausted{ opacity:.38; pointer-events:none; }
+.forge-mat__gem{ width:16px; height:16px; flex-shrink:0; background:var(--mc); box-shadow:0 0 8px var(--mc); }
+.forge-mat__gem.tier1{ clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%); }
+.forge-mat__gem.tier2{ clip-path:polygon(50% 0,93% 25%,93% 75%,50% 100%,7% 75%,7% 25%); }
+.forge-mat__gem.tier3{ clip-path:polygon(50% 0,100% 38%,81% 100%,19% 100%,0 38%); }
+.forge-mat__txt{ min-width:0; }
+.forge-mat__name{ display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; }
+.forge-mat__left{ display:block; font-family:var(--font-mono); font-size:8.5px; color:var(--ink-dim); margin-top:2px; }
+.forge-mat__picked{
+  margin-left:auto; min-width:20px; height:20px; border-radius:10px; padding:0 5px;
+  display:flex; align-items:center; justify-content:center;
+  background:var(--mc); color:#17120e; font-family:var(--font-mono); font-size:10px; font-weight:700;
+}
+.forge-popup__foot{ border-top:1px solid var(--line-metal); padding:12px 16px 16px; }
+.forge-start{
+  width:100%; padding:12px 14px; border:1px solid var(--grade-unique); border-radius:5px;
+  background:#3a2a1d; color:var(--ink); font-family:var(--font-display); font-size:15px; cursor:pointer;
+}
+.forge-start:disabled{ opacity:.35; border-color:var(--line-metal); cursor:default; }
+.forge-start__note{ text-align:center; font-size:9.5px; color:var(--ink-dim); margin-top:7px; }
 
 /* ══ [§css.night] 개봉 — open_night 원본 ══ */
 .reveal{
@@ -1281,6 +1361,10 @@ body.night-open{ overflow:hidden; overscroll-behavior:none; }
     <div class="sheet__panel" id="sheetPanel"></div>
   </div>
 
+  <div class="forge-popup" id="forgePopup">
+    <div class="forge-popup__panel" id="forgePopupPanel"></div>
+  </div>
+
   <div class="toast" id="toast"></div>
 </div>
 
@@ -1457,6 +1541,9 @@ const S = {
   mats:{ '무쇠':2, '강철':1 },   // 종류별 보유량
   fragments:0
 };
+
+let forgeSelection = [];
+let shopSection = 'home';
 
 /* ═══ [§core.outcome] 생환 판정 — 내보내는 순간 확정되고, 뜯기 전까지 어디에도 드러나지 않는다 ═══ */
 function rollOutcome(hero, wp, dName){
@@ -2368,7 +2455,7 @@ function renderTokens(){
 
 /* 무기고 — 아침과 저녁이 같은 선반을 본다.
    저녁에 비어 있는 자리가 곧 지금 내가 노출된 정도다. */
-function armoryHTML(emptyMsg){
+function armoryHTML(emptyMsg, repairMode=false){
   if(!S.stock.length) return `<div class="armory__empty">${emptyMsg}</div>`;
   return `<div class="armory">
     <div class="armory__rail">${S.stock.map(w=>{
@@ -2384,8 +2471,9 @@ function armoryHTML(emptyMsg){
           <div class="gcard__name">${w.name}</div>
           <div class="gcard__atk">${w.atk}</div>
           <div class="gcard__bar"><i style="width:${pct}%; background:${col}"></i></div>
-          <div class="gcard__brit">취성 <b>${w.brit}%</b></div>
+          <div class="gcard__brit">내구 ${w.dur}/${w.durMax} · 취성 <b>${w.brit}%</b></div>
         </div>
+        ${repairMode ? `<button class="gcard__repair" data-repair="${w.id}" ${w.dur>=w.durMax?'disabled':''}>${w.dur>=w.durMax?'수리 완료':`수리 +${w.durMax-w.dur}`}</button>` : ''}
       </div>`;
     }).join('')}</div>
   </div>`;
@@ -2408,13 +2496,112 @@ function matsHTML(){
   </div>`;
 }
 
-function bindArmory(){
+function bindArmory(repairMode=false){
   document.querySelectorAll('.gcard[data-w]').forEach(el=>{
     el.onclick = ()=>{
       const w = S.stock.find(x=>x.id === el.dataset.w);
       if(w) openWeaponDetail(w);
     };
   });
+  if(repairMode){
+    document.querySelectorAll('.gcard__repair[data-repair]').forEach(btn=>{
+      btn.onclick = e=>{
+        e.stopPropagation();
+        const w = S.stock.find(x=>x.id===btn.dataset.repair);
+        if(!w || w.dur>=w.durMax) return;
+        w.dur = w.durMax;
+        toast(`${w.name}의 내구도를 모두 수리했다.`);
+        renderPanel();
+      };
+    });
+  }
+}
+
+function selectedMatCount(name){
+  return forgeSelection.filter(n=>n===name).length;
+}
+
+function forgeGrade(selection){
+  const score = selection.reduce((sum,n)=>sum+(MATERIALS[n]?.tier||1),0);
+  return score >= 8 ? 'unique' : score >= 6 ? 'high' : score >= 4 ? 'mid' : 'common';
+}
+
+function renderForgePopup(){
+  const panel = $('forgePopupPanel');
+  const names = Object.keys(S.mats).filter(n=>S.mats[n] > 0);
+  const slots = Array.from({length:MATS_PER_WEAPON},(_,i)=>{
+    const n = forgeSelection[i];
+    if(!n) return `<div class="forge-slot"><span class="forge-slot__num">${i+1}</span><span class="forge-slot__name">재료 선택</span></div>`;
+    const M = MATERIALS[n] || { c:'var(--ink-dim)', tier:1 };
+    return `<button class="forge-slot filled" data-slot="${i}" style="--mc:${M.c}" title="선택 취소">
+      <span class="forge-slot__gem tier${M.tier}"></span><span class="forge-slot__name">${n}</span>
+    </button>`;
+  }).join('');
+
+  panel.innerHTML = `
+    <div class="forge-popup__head">
+      <span class="forge-popup__ico">${ICON.anvil}</span>
+      <div><div class="forge-popup__title">제작소</div><div class="forge-popup__sub">재료를 3개 골라 모루 위에 올린다.</div></div>
+      <button class="forge-popup__close" id="forgeClose" aria-label="닫기">×</button>
+    </div>
+    <div class="forge-slots">${slots}</div>
+    <div class="forge-popup__k">보 유 재 료</div>
+    <div class="forge-materials">${names.map(n=>{
+      const M = MATERIALS[n] || { c:'var(--ink-dim)', tier:1 };
+      const picked = selectedMatCount(n), left = S.mats[n]-picked;
+      return `<button class="forge-mat${picked?' selected':''}${left<=0?' exhausted':''}" data-mat="${n}" style="--mc:${M.c}">
+        <span class="forge-mat__gem tier${M.tier}"></span>
+        <span class="forge-mat__txt"><span class="forge-mat__name">${n}</span><span class="forge-mat__left">남음 ${left} / ${S.mats[n]}</span></span>
+        ${picked ? `<span class="forge-mat__picked">${picked}</span>` : ''}
+      </button>`;
+    }).join('')}</div>
+    <div class="forge-popup__foot">
+      <button class="forge-start" id="forgeStart" ${forgeSelection.length===MATS_PER_WEAPON?'':'disabled'}>벼리기</button>
+      <div class="forge-start__note">${forgeSelection.length} / ${MATS_PER_WEAPON} 선택</div>
+    </div>`;
+
+  $('forgeClose').onclick = closeForgePopup;
+  panel.querySelectorAll('.forge-slot[data-slot]').forEach(el=>{
+    el.onclick = ()=>{ forgeSelection.splice(Number(el.dataset.slot),1); renderForgePopup(); };
+  });
+  panel.querySelectorAll('.forge-mat[data-mat]').forEach(el=>{
+    el.onclick = ()=>{
+      if(forgeSelection.length >= MATS_PER_WEAPON) return;
+      const n = el.dataset.mat;
+      if(selectedMatCount(n) >= (S.mats[n]||0)) return;
+      forgeSelection.push(n); renderForgePopup();
+    };
+  });
+  $('forgeStart').onclick = startForging;
+}
+
+function openForgePopup(){
+  if(totalMats() < MATS_PER_WEAPON) return;
+  forgeSelection = [];
+  renderForgePopup();
+  $('forgePopup').classList.add('on');
+}
+
+function closeForgePopup(){
+  $('forgePopup').classList.remove('on');
+  forgeSelection = [];
+}
+
+function startForging(){
+  if(forgeSelection.length !== MATS_PER_WEAPON) return;
+  const used = [...forgeSelection];
+  const counts = used.reduce((acc,n)=>{ acc[n]=(acc[n]||0)+1; return acc; },{});
+  const available = Object.entries(counts).every(([n,c])=>c <= (S.mats[n]||0));
+  if(!available){ closeForgePopup(); renderPanel(); return; }
+  used.forEach(n=>{
+    S.mats[n]--;
+    if(S.mats[n] <= 0) delete S.mats[n];
+  });
+  S.stock.push(makeWeapon(forgeGrade(used)));
+  $('forgePopup').classList.remove('on');
+  forgeSelection = [];
+  toast(`${used.join(' · ')}으로 한 자루를 벼렸다.`);
+  renderPanel();
 }
 
 /* ═══ [§scr.page] 상점 · 개봉 ═══
@@ -2429,76 +2616,72 @@ function renderPanel(){
   $('pageDay').textContent = `DAY ${S.day}`;
 
   if(S.phase === 'shop'){
-    $('pagePhase').textContent = '상점';
     const canForge = totalMats() >= MATS_PER_WEAPON;
-    $('pageSub').innerHTML = S.stock.length
-      ? `내어줄 수 있는 것 <b>${S.stock.length}</b>자루`
-      : `<b>내어줄 것이 없다</b>`;
-
-    p.innerHTML = `
-      <div class="page__k">무 기 고</div>
-      ${armoryHTML('선반이 비었다.<br>벼리지 않으면 내어줄 것이 없다.')}
-      <div class="page__k" style="margin-top:22px">재 료</div>
-      ${matsHTML()}
-      ${S.out.length ? `
-        <div class="page__k" style="margin-top:22px">나 가  있 는  것</div>
-        ${S.out.slice().sort((x,y)=>
-            (DUNGEONS[x.dungeon].turns - x.elapsed) - (DUNGEONS[y.dungeon].turns - y.elapsed)
-          ).map(o=>{
-            const left = DUNGEONS[o.dungeon].turns - o.elapsed;
-            return `<div class="gone">
-              <div class="gone__said">${o.said || ''}</div>
-              <div class="gone__row">
-                <span class="gone__ico" style="color:${o.hero.accent}">${ICON.hero}</span>
-                <span class="gone__who">${o.hero.name}</span>
-                <span class="gone__ico" style="color:${GRADE[o.weapon.grade].c}">${WSIL[o.weapon.type]}</span>
-                <span class="gone__who">${o.weapon.name}</span>
-                <span class="gone__when">${left>0 ? dayWord(left)+' 남음' : '오늘 온다'}</span>
-              </div>
-            </div>`;
-          }).join('')}` : ''}
-      <div class="doors">
-        <div class="door ${canForge?'':'door--shut'}" id="doorForge">
-          <span class="door__ico">${ICON.anvil}</span>
-          <div class="door__txt">
-            <div class="door__t">제작소로</div>
-            <div class="door__s">${canForge
-              ? `재료 ${MATS_PER_WEAPON}개로 한 자루를 벼린다`
-              : '재료가 모자란다'}</div>
-          </div>
-          <span class="door__go">›</span>
-        </div>
-        <div class="door" id="doorGreet">
-          <span class="door__ico">${ICON.hero}</span>
-          <div class="door__txt">
-            <div class="door__t">문을 연다</div>
-            <div class="door__s">${S.guests.length}명이 기다린다 · 하루가 간다</div>
-          </div>
-          <span class="door__go">›</span>
-        </div>
-      </div>`;
-    bindArmory();
-    acts.innerHTML = '';
+    const repairCount = S.stock.filter(w=>w.dur<w.durMax).length;
     $('shopMapBtn').innerHTML =
       `<span class="mapbtn__ico">${ICON.map}</span><span class="mapbtn__t">지도</span>`;
     $('shopMapBtn').onclick = openShopPeek;
 
-    $('doorForge').onclick = ()=>{
-      if(totalMats() < MATS_PER_WEAPON) return;
-      // forge 3단계가 붙을 자리. 지금은 재료를 값싼 것부터 소모한다
-      let need = MATS_PER_WEAPON;
-      const order = Object.keys(S.mats)
-        .filter(n=>S.mats[n]>0)
-        .sort((x,y)=>(MATERIALS[x]?.tier||1)-(MATERIALS[y]?.tier||1));
-      for(const n of order){
-        while(need > 0 && S.mats[n] > 0){ S.mats[n]--; need--; }
-        if(S.mats[n] === 0) delete S.mats[n];
-        if(!need) break;
-      }
-      S.stock.push(makeWeapon());
-      toast('한 자루를 벼렸다.'); renderPanel();
-    };
-    $('doorGreet').onclick = ()=>{ showPage(false); startGreet(); };
+    if(shopSection === 'home'){
+      $('pagePhase').textContent = '상점';
+      $('pageSub').innerHTML = '오늘 할 일을 고른다';
+      p.innerHTML = `
+        <div class="shop-hub__intro">무기를 손보고, 재료를 벼리고, 준비가 끝나면 문을 열어 용사를 맞이한다.</div>
+        <div class="doors doors--hub">
+          <div class="door" id="hubArmory">
+            <span class="door__ico">${ICON.loan}</span>
+            <div class="door__txt">
+              <div class="door__t">무기고</div>
+              <div class="door__s">진열 ${S.stock.length}자루 · 수리 필요 ${repairCount}자루</div>
+            </div>
+            <span class="door__go">›</span>
+          </div>
+          <div class="door" id="hubForge">
+            <span class="door__ico">${ICON.anvil}</span>
+            <div class="door__txt">
+              <div class="door__t">제작소</div>
+              <div class="door__s">보유 재료 ${totalMats()}개 · ${canForge?'제작 가능':'재료 부족'}</div>
+            </div>
+            <span class="door__go">›</span>
+          </div>
+          <div class="door" id="hubGreet">
+            <span class="door__ico">${ICON.hero}</span>
+            <div class="door__txt">
+              <div class="door__t">상점 문열기</div>
+              <div class="door__s">${S.guests.length}명이 기다린다 · 하루가 간다</div>
+            </div>
+            <span class="door__go">›</span>
+          </div>
+        </div>`;
+      acts.innerHTML = '';
+      $('hubArmory').onclick = ()=>{ shopSection='armory'; renderPanel(); };
+      $('hubForge').onclick = ()=>{ shopSection='forge'; renderPanel(); };
+      $('hubGreet').onclick = ()=>{ shopSection='home'; showPage(false); startGreet(); };
+
+    } else if(shopSection === 'armory'){
+      $('pagePhase').textContent = '무기고';
+      $('pageSub').innerHTML = `진열된 무기 <b>${S.stock.length}</b>자루 · 수리 필요 <b>${repairCount}</b>자루`;
+      p.innerHTML = `
+        <div class="page__k">무 기 진 열 대</div>
+        ${armoryHTML('선반이 비었다.<br>제작소에서 무기를 벼려야 한다.', true)}`;
+      acts.innerHTML = `<button class="page-back" id="shopSectionBack">‹ 상점으로</button>`;
+      bindArmory(true);
+      $('shopSectionBack').onclick = ()=>{ shopSection='home'; renderPanel(); };
+
+    } else {
+      $('pagePhase').textContent = '제작소';
+      $('pageSub').innerHTML = `소지한 재료 <b>${totalMats()}</b>개`;
+      p.innerHTML = `
+        <div class="page__k">소 지 한 재 료</div>
+        ${matsHTML()}
+        <button class="workshop-create" id="workshopCreate" ${canForge?'':'disabled'}>
+          <span class="workshop-create__ico">${ICON.anvil}</span>
+          <span><span class="workshop-create__title">무기 제작</span><span class="workshop-create__sub">${canForge?'재료 3가지를 골라 벼리기 시작':'무기 한 자루를 만들 재료가 부족하다'}</span></span>
+        </button>`;
+      acts.innerHTML = `<button class="page-back" id="shopSectionBack">‹ 상점으로</button>`;
+      $('workshopCreate').onclick = openForgePopup;
+      $('shopSectionBack').onclick = ()=>{ shopSection='home'; renderPanel(); };
+    }
     showPage(true);
 
   } else if(S.phase === 'open'){
@@ -2733,6 +2916,7 @@ function openShop(){
   S.sealed = [];
   if(!S.guests.length) S.guests = makeGuests();   // 그날 손님은 이미 정해져 있다
   S.phase = 'shop';
+  shopSection = 'home';
   renderMap(); renderPanel(); setPanel(false);
   if(!S.revealNode) scrollToShop();
 }
@@ -3107,6 +3291,7 @@ function makeGuests(){
 
 
 $('sheet').onclick = e=>{ if(e.target.id==='sheet') $('sheet').classList.remove('on'); };
+$('forgePopup').onclick = e=>{ if(e.target.id==='forgePopup') closeForgePopup(); };
 
 
 let toastT;

@@ -1477,6 +1477,16 @@ const DUNGEONS = {
                   loot:['서리결정','미스릴'], unlocked:false, sent:0, lost:0, log:[],
                   known:new Set(), lootKnown:new Set() }
 };
+
+/* 이름은 키워드를 모두 채운 뒤에야 밝혀진다.
+   내부 로직은 실제 이름을 계속 사용하고 화면 표기만 감춘다. */
+const DUNGEON_ORDER = Object.keys(DUNGEONS);
+function dungeonName(name){
+  const D = DUNGEONS[name];
+  if(!D) return name;
+  const identified = D.keys.every(k=>D.known.has(k));
+  return identified ? name : `던전${DUNGEON_ORDER.indexOf(name)+1}`;
+}
 /* 좌표계 — 세로 스크롤. 위로 갈수록 멀고 깊다.
    턴당 간격을 넉넉히 벌려 "3턴은 화면 밖에 있다"가 몸으로 읽히게 한다. */
 const LANE_X   = [66, 195, 324];
@@ -2133,7 +2143,7 @@ function loanCardHTML(o, options={}){
   const seed = `${o.weapon.id}-seam-${o.id || o.hero.name}-${big?'big':'base'}`;
   const foot = o.state === 'out'
     ? `<div class="loan-card__foot loan-card__foot--split">
-         <span class="loan-card__place" style="color:${D.accent}">${o.dungeon}</span>
+         <span class="loan-card__place" style="color:${D.accent}">${dungeonName(o.dungeon)}</span>
          <span class="loan-card__wait">${o.left>0 ? `${dayWord(o.left)} 남았다` : '오늘 돌아온다'}<br>${o.ago}일째</span>
        </div>`
     : `<div class="loan-card__foot">저녁에 길을 오른다</div>`;
@@ -2260,7 +2270,7 @@ function renderMap(){
         const r = document.createElement('div');
         r.className = 'rumor on';
         r.style.left = (LANE_X[D.lane]-59) + 'px';
-        r.innerHTML = `${name}<small>소문뿐</small>`;
+        r.innerHTML = `${dungeonName(name)}<small>소문뿐</small>`;
         inner.appendChild(r);
       }
       return;
@@ -2312,7 +2322,7 @@ function renderMap(){
           <div class="dnode__accent"></div>
           <div class="dnode__body">
             <div class="dnode__ico">${DICON[name] || ICON.dungeon}</div>
-            <div class="dnode__name">${name}</div>
+            <div class="dnode__name">${dungeonName(name)}</div>
             <div class="dnode__turn">${dayWord(D.turns)} 걸린다</div>
           </div>
           ${crackSVG(name, 112, 'dnode__seam')}
@@ -2324,7 +2334,7 @@ function renderMap(){
           <div class="dnode__accent"></div>
           <div class="dback">
             <div class="dback__head">
-              <span class="dback__name">${name}</span>
+              <span class="dback__name">${dungeonName(name)}</span>
               <span class="dback__k">소 문</span>
             </div>
             <div class="dback__keys">${keyHTML}</div>
@@ -2701,7 +2711,7 @@ function sealedHTML(sl, i){
     <div class="sealed__flap"></div>
     <div class="sealed__wax">封</div>
     <div class="sealed__label">
-      <div class="sealed__dest">${sl.dungeon}</div>
+      <div class="sealed__dest">${dungeonName(sl.dungeon)}</div>
       <div class="sealed__who">${sl.hero.name} · ${sl.weapon.name}</div>
       <div class="sealed__ago">${ago}일 전에 보냈다</div>
     </div>
@@ -2994,7 +3004,7 @@ function openSealed(i){
         <div class="env__flap"></div>
         <div class="env__seal">封</div>
         <div class="env__label">
-          <div class="env__dest">${sl.dungeon}</div>
+          <div class="env__dest">${dungeonName(sl.dungeon)}</div>
           <div class="env__who">${sl.hero.name} · ${sl.weapon.name}</div>
         </div>
       </div>
@@ -3067,7 +3077,7 @@ function showResult(){
       <div class="rcard__ico" style="color:${sl.hero.accent}">${ICON.hero}</div>
       <div>
         <div class="rcard__name">${sl.hero.name}</div>
-        <div class="rcard__sub">${sl.hero.dispo} · ${sl.dungeon} · ${ago}일</div>
+        <div class="rcard__sub" data-result-dungeon>${sl.hero.dispo} · ${dungeonName(sl.dungeon)} · ${ago}일</div>
         ${dead?'<div class="rcard__gone">돌아오지 못함</div>':''}
       </div>
     </div>
@@ -3106,6 +3116,8 @@ function showResult(){
     if(broken){ S.fragments++; gainMat(D, true); }
     else       { S.stock.push(sl.weapon); gainMat(D, false); }
     bringBack(sl, D);
+    const resultDungeon = rcard.querySelector('[data-result-dungeon]');
+    if(resultDungeon) resultDungeon.textContent = `${sl.hero.dispo} · ${dungeonName(sl.dungeon)} · ${ago}일`;
     maybeRumor();
   }
 
@@ -3261,7 +3273,7 @@ function maybeRumor(){
     if(Math.random() < .45){ D.rumored = true; toast(`소문 — ${name}에 대한 이야기를 들었다.`); }
   } else if(Math.random() < .5){
     D.unlocked = true; D.justUnlocked = true; S.revealNode = name;
-    toast(`${name}으로 가겠다는 이가 나타났다.`);
+    toast(`${dungeonName(name)}으로 가겠다는 이가 나타났다.`);
   }
 }
 

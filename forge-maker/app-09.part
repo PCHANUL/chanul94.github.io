@@ -12321,29 +12321,33 @@ ayer) {
     }
     drawWeaponPickerPreview(graphics, name, weapon, centerX, centerY) {
       const normalizedLength = import_phaser.default.Math.Clamp((weapon.length - 6) / 4, 0, 1);
-      const bladeLength = 38 + normalizedLength * 18;
-      const bladeHeight = name === "needle" ? 3 : Math.max(6, weapon.width * 2);
-      const handleLength = 18;
-      const totalLength = bladeLength + handleLength;
-      const handleStart = centerX - totalLength / 2;
-      const joinX = handleStart + handleLength;
-      const tipX = joinX + bladeLength;
+      const bladeLength = 58 + normalizedLength * 22;
+      const bladeHeight = name === "needle" ? 4 : Math.max(8, weapon.width * 2.5);
+      const handleKind = weapon.hilt;
+      const handleExtents = this.resultHiltExtents(handleKind);
+      const bladeJoinGap = RESULT_HANDLE_BLADE_GAP;
+      const rightReach = bladeJoinGap + bladeLength;
+      const joinX = centerX + (handleExtents.left - rightReach) / 2;
+      const bladeJoinX = joinX + bladeJoinGap;
+      const tipX = bladeJoinX + bladeLength;
+      const previewScale = 0.5;
+
+      // 결과 화면과 같은 손잡이 렌더러를 사용해 무기별 자루 길이,
+      // 코등이, 감기 방식과 목재 재질이 썸네일에도 그대로 드러나게 한다.
+      this.drawResultHilt(graphics, joinX, centerY, handleKind, false);
       if (name === "axe") {
-        graphics.fillStyle(7621161, 1).fillRect(handleStart, centerY - 2, totalLength - 8, 5);
-        graphics.fillStyle(COLORS.gold, 1).fillRect(handleStart - 3, centerY - 4, 5, 9);
         graphics.fillStyle(13159890, 0.92);
         graphics.beginPath().moveTo(tipX - 14, centerY - 14).lineTo(tipX, centerY - 10).lineTo(tipX - 2, centerY + 11).lineTo(tipX - 14, centerY + 14).lineTo(tipX - 20, centerY).closePath().fillPath();
         graphics.lineStyle(1, COLORS.gold, 0.7).lineBetween(tipX - 14, centerY - 14, tipX - 14, centerY + 14);
+        graphics.setScale(previewScale).setPosition(centerX * (1 - previewScale), centerY * (1 - previewScale));
         return;
       }
-      graphics.fillStyle(6371107, 1).fillRect(handleStart, centerY - 3, handleLength - 4, 6);
-      graphics.fillStyle(COLORS.gold, 1).fillRect(handleStart - 3, centerY - 5, 5, 10);
-      graphics.fillStyle(COLORS.gold, 0.95).fillRect(joinX - 5, centerY - bladeHeight / 2 - 4, 5, bladeHeight + 8);
-      if (weapon.hilt === "ring") graphics.lineStyle(2, COLORS.gold, 0.9).strokeCircle(handleStart - 1, centerY, 5);
+      graphics.fillStyle(COLORS.gold, 0.95).fillRect(bladeJoinX - 5, centerY - bladeHeight / 2 - 4, 5, bladeHeight + 8);
       graphics.fillStyle(13159890, 0.94);
-      graphics.beginPath().moveTo(joinX, centerY - bladeHeight / 2).lineTo(tipX - 8, centerY - bladeHeight / 2).lineTo(tipX, centerY).lineTo(tipX - 8, centerY + bladeHeight / 2).lineTo(joinX, centerY + bladeHeight / 2).closePath().fillPath();
-      graphics.lineStyle(1, 16777215, 0.34).lineBetween(joinX + 2, centerY - bladeHeight / 2 + 1, tipX - 9, centerY - bladeHeight / 2 + 1);
-      graphics.lineStyle(1, COLORS.gold, 0.45).lineBetween(joinX, centerY + bladeHeight / 2, tipX - 8, centerY + bladeHeight / 2);
+      graphics.beginPath().moveTo(bladeJoinX, centerY - bladeHeight / 2).lineTo(tipX - 8, centerY - bladeHeight / 2).lineTo(tipX, centerY).lineTo(tipX - 8, centerY + bladeHeight / 2).lineTo(bladeJoinX, centerY + bladeHeight / 2).closePath().fillPath();
+      graphics.lineStyle(1, 16777215, 0.34).lineBetween(bladeJoinX + 2, centerY - bladeHeight / 2 + 1, tipX - 9, centerY - bladeHeight / 2 + 1);
+      graphics.lineStyle(1, COLORS.gold, 0.45).lineBetween(bladeJoinX, centerY + bladeHeight / 2, tipX - 8, centerY + bladeHeight / 2);
+      graphics.setScale(previewScale).setPosition(centerX * (1 - previewScale), centerY * (1 - previewScale));
     }
     refiningIngots() {
       return this.tiles().filter(isIngot).sort((a, b) => b.folds - a.folds || b.w * b.h - a.w * a.h).slice(0, 8);

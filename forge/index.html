@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Forge</title>
+  <style>
+    html,body{height:100%;margin:0;background:#100b0b;color:#f5e8cf;font-family:system-ui,sans-serif}
+    body{display:grid;place-items:center}
+    main{width:min(82vw,420px);text-align:center}
+    .track{height:6px;margin-top:18px;overflow:hidden;border-radius:999px;background:#33231f}
+    .bar{height:100%;width:0;background:#e4a64e;transition:width .18s ease}
+    p{margin:12px 0 0;font-size:14px;opacity:.72}
+  </style>
+</head>
+<body>
+  <main>
+    <strong>대장간을 준비하고 있습니다</strong>
+    <div class="track"><div class="bar" id="bar"></div></div>
+    <p id="status">0%</p>
+  </main>
+  <script>
+    (async () => {
+      const count = 18;
+      const chunks = [];
+      let total = 0;
+      for (let i = 0; i < count; i += 1) {
+        const name = `payload-${String(i).padStart(2, '0')}.part`;
+        const response = await fetch(name, { cache: 'no-store' });
+        if (!response.ok) throw new Error(`${name}: HTTP ${response.status}`);
+        const chunk = new Uint8Array(await response.arrayBuffer());
+        chunks.push(chunk);
+        total += chunk.byteLength;
+        const progress = Math.round(((i + 1) / count) * 100);
+        document.getElementById('bar').style.width = `${progress}%`;
+        document.getElementById('status').textContent = `${progress}%`;
+      }
+      const joined = new Uint8Array(total);
+      let offset = 0;
+      for (const chunk of chunks) {
+        joined.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      const html = new TextDecoder('utf-8').decode(joined);
+      document.open();
+      document.write(html);
+      document.close();
+    })().catch((error) => {
+      document.querySelector('main').innerHTML = `<strong>불러오지 못했습니다</strong><p>${error.message}</p>`;
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,1294 @@
+  if (!bladeCell) continue;
+          const existing = groups.get(bladeCell.pieceId);
+          if (existing) {
+            existing.minCol = Math.min(existing.minCol, col);
+            existing.maxCol = Math.max(existing.maxCol, col);
+            existing.minRow = Math.min(existing.minRow, row);
+            existing.maxRow = Math.max(existing.maxRow, row);
+          } else {
+            groups.set(bladeCell.pieceId, {
+              pieceId: bladeCell.pieceId,
+              minCol: col,
+              maxCol: col,
+              minRow: row,
+              maxRow: row,
+              material: bladeCell.material,
+              layers: bladeCell.layers
+            });
+          }
+        }
+      }
+      return [...groups.values()].sort((a, b) => a.pieceId - b.pieceId);
+    }
+    bladeTargetPlacement(targetType = this.targetType) {
+      const weapon = WEAPONS[targetType];
+      const startCol = Math.floor((BLADE_COLS - weapon.width) / 2);
+      return {
+        weapon,
+        startCol,
+        axisCol: startCol + weapon.width / 2
+      };
+    }
+    drawForgeBoard() {
+      if (!this.forgeGraphics) return;
+      const graphics = this.forgeGraphics;
+      const { x: boardX, y: boardY, cell, bottom, rows: boardRows } = this.forgeBoard;
+      graphics.clear();
+      if (this.forgeCeilingWarning?.active) this.forgeCeilingWarning.setVisible(false);
+      graphics.fillStyle(986122, 1).fillRect(boardX, boardY, BLADE_COLS * cell, BLADE_ROWS * cell);
+      const profile = targetProfile(this.targetType, BLADE_COLS);
+      const targetCells = Array.from({ length: BLADE_COLS }, () => Array(BLADE_ROWS).fill(false));
+      profile.forEach((segment) => {
+        if (segment.row >= BLADE_ROWS) return;
+        for (let column = segment.from; column <= segment.to; column += 1) {
+          if (column >= 0 && column < BLADE_COLS) targetCells[column][segment.row] = true;
+        }
+      });
+      const softColor = import_phaser.default.Display.Color.IntegerToRGB(softestMaterial().color);
+      const hardColor = import_phaser.default.Display.Color.IntegerToRGB(hardestMaterial().color);
+      for (let col = 0; col < BLADE_COLS; col += 1) {
+        for (let row = 0; row < BLADE_ROWS; row += 1) {
+          if (!targetCells[col][row]) continue;
+          const desired = targetMaterialProfile(this.targetType, col, row, BLADE_COLS)?.targetHardness ?? 0.5;
+          const shade = import_phaser.default.Display.Color.GetColor(
+            Math.round(softColor.r + (hardColor.r - softColor.r) * desired),
+            Math.round(softColor.g + (hardColor.g - softColor.g) * desired),
+            Math.round(softColor.b + (hardColor.b - softColor.b) * desired)
+          );
+          graphics.fillStyle(shade, 0.2).fillRect(boardX + col * cell + 1, bottom - (row + 1) * cell + 1, cell - 2, cell - 2);
+        }
+      }
+      graphics.lineStyle(1, COLORS.line, 0.35);
+      for (let col = 0; col <= BLADE_COLS; col += 1) graphics.lineBetween(boardX + col * cell, boardY, boardX + col * cell, bottom);
+      for (let row = 0; row <= BLADE_ROWS; row += 1) graphics.lineBetween(boardX, boardY + row * cell, boardX + BLADE_COLS * cell, boardY + row * cell);
+      if (boardRows < BLADE_ROWS) {
+        // 천장 위 구간 — 여기까지 쌓이면 제작이 끝난다. 어둡게 덮고 경계선을 긋는다.
+        const ceilingY = bottom - boardRows * cell;
+        graphics.fillStyle(658445, 0.62).fillRect(boardX, boardY, BLADE_COLS * cell, ceilingY - boardY);
+        graphics.lineStyle(1, COLORS.ember, 0.5);
+        for (let x = boardX; x < boardX + BLADE_COLS * cell - 4; x += 10) {
+          graphics.lineBetween(x, ceilingY, Math.min(x + 6, boardX + BLADE_COLS * cell), ceilingY);
+        }
+      }
+      const { weapon, axisCol: targetAxisCol } = this.bladeTargetPlacement();
+      profile.forEach((segment) => {
+        if (segment.row >= BLADE_ROWS) return;
+        for (let column = segment.from; column <= segment.to; column += 1) {
+          if (column < 0 || column >= BLADE_COLS) continue;
+          targetCells[column][segment.row] = true;
+          graphics.fillStyle(COLORS.gold, 0.05).fillRect(boardX + column * cell + 1, bottom - (segment.row + 1) * cell + 1, cell - 2, cell - 2);
+        }
+      });
+      const targetOutline = buildOutlineLoops({
+        isFilled: /* @__PURE__ */ __name((column, row) => Boolean(targetCells[column]?.[row]), "isFilled"),
+        cols: BLADE_COLS,
+        rows: BLADE_ROWS,
+        toPixel: /* @__PURE__ */ __name((gridX, gridY) => [boardX + gridX * cell, bottom - gridY * cell], "toPixel"),
+        chamfer: 0
+      });
+      this.strokeBladeOutline(graphics, targetOutline, COLORS.gold, 0.66, 2);
+      const targetCenterX = boardX + targetAxisCol * cell;
+      this.drawVerticalHilt(graphics, targetCenterX, bottom, weapon.hilt);
+      this.groupedBladeIngots().forEach((ingot) => {
+        const x = boardX + ingot.minCol * cell;
+        const y = bottom - (ingot.maxRow + 1) * cell;
+        const width = (ingot.maxCol - ingot.minCol + 1) * cell;
+        const height = (ingot.maxRow - ingot.minRow + 1) * cell;
+        this.drawMixedMaterialBlock(
+          graphics,
+          x + 1,
+          y + 1,
+          width - 2,
+          height - 2,
+          ingot.material,
+          ingot.layers,
+          1,
+          COLORS.line
+        );
+      });
+      const outline = this.bladeOutlineLoops(
+        this.bladeCells,
+        "vertical",
+        cell,
+        (gridX, gridY) => [boardX + gridX * cell, bottom - gridY * cell],
+        this.targetType
+      );
+      this.strokeBladeOutline(graphics, outline, COLORS.mint, 0.96, 2);
+      for (let col = 0; col < BLADE_COLS; col += 1) {
+        for (let row = 0; row < BLADE_ROWS; row += 1) {
+          const bladeCell = this.bladeCells[col][row];
+          if (!bladeCell) continue;
+          const x = boardX + col * cell;
+          const y = bottom - (row + 1) * cell;
+          const right = col < BLADE_COLS - 1 ? this.bladeCells[col + 1][row] : null;
+          const above = row < BLADE_ROWS - 1 ? this.bladeCells[col][row + 1] : null;
+          graphics.lineStyle(2, COLORS.gold, 0.76);
+          if (right && right.pieceId !== bladeCell.pieceId) graphics.lineBetween(x + cell, y + 4, x + cell, y + cell - 4);
+          if (above && above.pieceId !== bladeCell.pieceId) graphics.lineBetween(x + 4, y, x + cell - 4, y);
+        }
+      }
+      if (this.currentPiece) {
+        const rest = this.restRow(this.currentPiece.x, this.currentPiece.w);
+        const pieceX = boardX + this.currentPiece.x * cell;
+        const pieceWidth = this.currentPiece.w * cell;
+        const pieceHeight = this.currentPiece.h * cell;
+        const previewY = bottom - (rest + this.currentPiece.h) * cell;
+        const previewFits = [];
+        for (let x = 0; x < this.currentPiece.w; x += 1) {
+          for (let y = 0; y < this.currentPiece.h; y += 1) {
+            previewFits.push(
+              materialPlacementFit(this.currentPiece.material, this.currentPiece.x + x, BLADE_COLS, {
+                targetType: this.targetType,
+                row: rest + y
+              })
+            );
+          }
+        }
+        const averageFit = previewFits.reduce((sum, value) => sum + value, 0) / Math.max(1, previewFits.length);
+        const wouldOverflow = rest + this.currentPiece.h > boardRows;
+        const previewColor = wouldOverflow ? COLORS.red : averageFit > 0.55 ? COLORS.gold : COLORS.red;
+        if (this.forgeCeilingWarning?.active) this.forgeCeilingWarning.setVisible(wouldOverflow);
+        if (wouldOverflow) {
+          // 이 자리에 놓으면 천장을 넘는다 — 넘어가는 칸만 붉게 덮어 얼마나 초과인지 보여준다.
+          const ceilingY = bottom - boardRows * cell;
+          const overflowTop = bottom - (rest + this.currentPiece.h) * cell;
+          graphics.fillStyle(COLORS.red, 0.22).fillRect(pieceX, overflowTop, pieceWidth, ceilingY - overflowTop);
+          graphics.lineStyle(2, COLORS.red, 0.9).lineBetween(boardX, ceilingY, boardX + BLADE_COLS * cell, ceilingY);
+        }
+        this.drawMixedMaterialBlock(
+          graphics,
+          pieceX + 3,
+          previewY + 3,
+          pieceWidth - 6,
+          pieceHeight - 6,
+          this.currentPiece.material,
+          this.currentPiece.layerCount,
+          0.25,
+          previewColor
+        );
+        graphics.lineStyle(2, previewColor, 0.74).strokeRect(pieceX, previewY, pieceWidth, pieceHeight);
+        const fallingY = bottom - (this.currentPiece.y + this.currentPiece.h) * cell;
+        const visibleTop = Math.max(boardY, fallingY);
+        const visibleBottom = Math.min(bottom, fallingY + pieceHeight);
+        const visibleHeight = visibleBottom - visibleTop;
+        if (visibleHeight > 2) {
+          this.drawMixedMaterialBlock(
+            graphics,
+            pieceX + 1,
+            visibleTop + 1,
+            pieceWidth - 2,
+            visibleHeight - 2,
+            this.currentPiece.material,
+            this.currentPiece.layerCount,
+            1,
+            COLORS.bone
+          );
+        }
+      }
+    }
+    drawVerticalHilt(graphics, centerX, joinY, kind, direction = 1) {
+      // drawResultHilt와 같은 표를 읽는다 — 제작소에서 보이는 자루가 결과 화면과 달라지지 않도록.
+      const material = HILT_MATERIAL_BY_KIND[kind] ?? HILT_MATERIAL_DEFAULT;
+      const metal = 13143358;
+      const grip = material === "haft" ? 9127467 : 6371107;
+      const gripHighlight = material === "haft" ? 13212747 : 10969138;
+      const guard = HILT_GUARD_BY_KIND[kind] ?? HILT_GUARD_DEFAULT;
+      const hiltLength = HILT_LENGTH_BY_KIND[kind] ?? HILT_LENGTH_DEFAULT;
+      // 목재 자루는 십자 코등이가 없다 — 좁은 쇠테로만. 세로 여백이 72px뿐이라 그립 길이는 캡을 둔다.
+      const guardWidth = material === "haft" ? Math.min(26, Math.round(guard * 1.1)) : Math.min(86, Math.round(guard * 1.5));
+      const gripLength = Math.min(54, Math.round(hiltLength * 0.68));
+      const guardY = direction > 0 ? joinY : joinY - 6;
+      const gripY = direction > 0 ? joinY + 6 : joinY - 6 - gripLength;
+      const pommelY = direction > 0 ? gripY + gripLength : gripY - 6;
+      graphics.fillStyle(metal, 1).fillRect(centerX - guardWidth / 2, guardY, guardWidth, 6);
+      graphics.fillStyle(15910509, 1).fillRect(centerX - guardWidth / 2 + 4, guardY + 1, Math.max(0, guardWidth - 8), 2);
+      graphics.fillStyle(grip, 1).fillRect(centerX - 8, gripY, 16, gripLength);
+      graphics.fillStyle(gripHighlight, 0.65).fillRect(centerX - 6, gripY + 2, 3, gripLength - 4);
+      if (material === "wrapped") {
+        graphics.fillStyle(2167567, 0.9);
+        for (let y = gripY + 6; y < gripY + gripLength - 2; y += 8) graphics.fillRect(centerX - 8, y, 16, 2);
+      } else {
+        // 세로로 선 자루라 나뭇결도 세로로 흐른다. 중간에 쇠고리 하나.
+        graphics.fillStyle(6180964, 0.5);
+        graphics.fillRect(centerX - 5, gripY + 2, 1, gripLength - 4);
+        graphics.fillRect(centerX + 3, gripY + 2, 1, gripLength - 4);
+        graphics.fillStyle(metal, 1).fillRect(centerX - 9, gripY + Math.round(gripLength * 0.62), 18, 3);
+      }
+      graphics.fillStyle(metal, 1).fillRect(centerX - 11, pommelY, 22, 6);
+      if (kind === "ring") {
+        const ringY = direction > 0 ? pommelY + 9 : pommelY - 3;
+        graphics.lineStyle(3, 15910509).strokeEllipse(centerX, ringY, 14, 11);
+      }
+    }
+    drawIngotShapePreview(graphics, piece, x, y, width, height, outlineColor) {
+      const displayWidth = piece.w * FORGE_QUEUE_CELL_SIZE + (piece.w - 1) * FORGE_QUEUE_CELL_GAP;
+      const displayHeight = piece.h * FORGE_QUEUE_CELL_SIZE + (piece.h - 1) * FORGE_QUEUE_CELL_GAP;
+      const displayX = x + (width - displayWidth) / 2;
+      const displayY = y + (height - displayHeight) / 2;
+      graphics.lineStyle(3, outlineColor, 0.32).strokeRoundedRect(displayX - 1, displayY - 1, displayWidth + 2, displayHeight + 2, 2);
+      this.drawMixedMaterialBlock(
+        graphics,
+        displayX,
+        displayY,
+        displayWidth,
+        displayHeight,
+        piece.material,
+        piece.layerCount,
+        1,
+        198153,
+        1,
+        0.92
+      );
+    }
+    drawQueuePreview() {
+      const graphics = this.add.graphics();
+      this.stageLayer.add(graphics);
+      const slotX = 290;
+      const slotY = 237;
+      const slotWidth = 104;
+      const slotHeight = 46;
+      const slotGap = 3;
+      for (let index = 0; index < 5; index += 1) {
+        const y = slotY + index * (slotHeight + slotGap);
+        const piece = this.queue[index];
+        const active = index === 0 && Boolean(piece);
+        graphics.fillStyle(active ? COLORS.panelHi : 1183501, 1).fillRoundedRect(slotX, y, slotWidth, slotHeight, 4);
+        graphics.lineStyle(active ? 1.5 : 1, active ? COLORS.gold : COLORS.line, active ? 0.92 : 0.3).strokeRoundedRect(slotX + 0.5, y + 0.5, slotWidth - 1, slotHeight - 1, 4);
+        graphics.fillStyle(active ? COLORS.gold : COLORS.line, active ? 0.95 : 0.42).fillRoundedRect(slotX + 6, y + 14, 18, 18, 3);
+        if (!piece) continue;
+        this.drawIngotShapePreview(
+          graphics,
+          piece,
+          slotX + 28,
+          y + 1,
+          slotWidth - 32,
+          slotHeight - 2,
+          active ? COLORS.gold : this.refiningTileOutlineColor(piece)
+        );
+        const orderText = this.add.text(slotX + 15, y + slotHeight / 2, `${piece.order + 1}`, {
+          fontFamily: MONO_FONT,
+          fontSize: "8px",
+          color: `#${(active ? COLORS.bg : COLORS.ash).toString(16)}`,
+          resolution: TEXT_RESOLUTION
+        }).setOrigin(0.5);
+        this.stageLayer.add(orderText);
+      }
+      graphics.fillStyle(1183501, 1).fillRoundedRect(290, 524, 104, 58, 4);
+      graphics.lineStyle(1, this.hold ? COLORS.gold : COLORS.line, this.hold ? 0.8 : 0.3).strokeRoundedRect(290.5, 524.5, 103, 57, 4);
+      if (this.hold) {
+        this.drawIngotShapePreview(graphics, this.hold, 292, 525, 100, 56, COLORS.gold);
+      }
+    }
+    drawForgeStats() {
+      const stats = this.forgeStats();
+      const formScore = stats.formEvaluation?.score || 0;
+      const formColor = formScore >= 0.8 ? COLORS.mint : formScore >= 0.55 ? COLORS.gold : COLORS.red;
+      this.drawStatStrip(STAGE_GAME_X, FORGE_STATS_Y, STAGE_GAME_WIDTH, [
+        { value: stats.count ? `${Math.round(formScore * 100)}%` : "—", label: "형태 적합", color: formColor },
+        { value: stats.count ? `${stats.performance}` : "—", label: "예상 성능", color: COLORS.mint },
+        { value: `${this.queue.length + (this.currentPiece ? 1 : 0) + (this.hold ? 1 : 0)}`, label: "남은 잉곳", color: COLORS.gold }
+      ]);
+    }
+    finishForge() {
+      if (this.phase !== 2) return;
+      this.forged = this.forgeStats();
+      this.resultSaved = false;
+      this.phase = 3;
+      this.quenchHeat = 0;
+      this.quenchHolding = false;
+      this.quenchReleased = false;
+      this.overheatLine = import_phaser.default.Math.Between(84, 96);
+      this.quenchPerformance = this.forged.performance;
+      this.quenchDurability = this.forged.durability;
+      this.quenchBrittleness = this.forged.brittleness;
+      this.quenchCombatTraits = { ...this.forged.combatTraits };
+      this.quenchCraftsmanship = { ...this.forged.craftsmanship };
+      this.broken = false;
+      this.renderQuench();
+    }
+    // ───────────────────────────── 3. 담금질
+    renderQuench() {
+      this.clearStage();
+      this.drawChrome(3);
+      this.panel(QUENCH_CANVAS_X, QUENCH_CANVAS_Y, QUENCH_CANVAS_WIDTH, QUENCH_CANVAS_HEIGHT, 5, 1840915, 0.98);
+      this.text(28, STAGE_GAME_Y + 10, "담금질 대상", 9, COLORS.muted).setStyle({ fontStyle: "bold" });
+      this.text(402, STAGE_GAME_Y + 10, WEAPONS[this.targetType].result, 10, COLORS.gold, 1, 0).setStyle({ fontStyle: "bold" });
+      this.quenchGraphics = this.add.graphics();
+      this.stageLayer.add(this.quenchGraphics);
+      this.drawQuenchWeapon();
+      const previewStats = calculateQuenchStats(this.forged, this.quenchHeat);
+      this.drawQuenchLivePanel(previewStats);
+      [this.performanceText, this.durabilityText, this.weaponFormText] = this.drawStatStrip(
+        STAGE_GAME_X,
+        QUENCH_STATS_Y,
+        STAGE_GAME_WIDTH,
+        [
+          { value: `${previewStats.performance}`, label: "종합 성능", color: COLORS.mint },
+          { value: `${previewStats.durability}`, label: "예상 내구", color: this.durabilityColor(previewStats.durability) },
+          { value: this.targetType, label: "무기 형태", color: COLORS.gold }
+        ],
+        QUENCH_STATS_HEIGHT
+      );
+      this.drawQuenchControlPanel();
+      this.updateQuench();
+      this.drawBottomNavigation();
+    }
+    drawQuenchLivePanel(stats) {
+      const x = QUENCH_LIVE_PANEL_X;
+      const y = QUENCH_LIVE_PANEL_Y;
+      const width = QUENCH_LIVE_PANEL_WIDTH;
+      const height = QUENCH_LIVE_PANEL_HEIGHT;
+      this.panel(x, y, width, height, 5, 1511951, 0.98);
+      this.text(x + width / 2, y + 11, "지금 놓으면", 8, COLORS.muted, 0.5, 0).setStyle({ fontStyle: "bold" });
+      this.stageLayer.add(this.add.rectangle(x + width / 2, y + 31, width - 20, 1, COLORS.line, 0.52));
+      const rows = [
+        { y: y + 47, label: "성능 변화" },
+        { y: y + 112, label: "파손 확률" },
+        { y: y + 177, label: "칼날 상태" }
+      ];
+      rows.forEach((row, index) => {
+        this.text(x + width / 2, row.y, row.label, 8, COLORS.muted, 0.5, 0);
+        if (index < rows.length - 1) {
+          this.stageLayer.add(this.add.rectangle(x + width / 2, row.y + 49, width - 24, 1, COLORS.line, 0.38));
+        }
+      });
+      this.quenchDeltaText = this.monoText(x + width / 2, y + 66, "", 17, COLORS.mint, 0.5, 0).setStyle({ fontStyle: "bold" });
+      this.quenchBreakText = this.monoText(x + width / 2, y + 131, "", 17, COLORS.gold, 0.5, 0).setStyle({ fontStyle: "bold" });
+      this.quenchBladeStateText = this.text(x + width / 2, y + 196, "", 11, COLORS.muted, 0.5, 0).setStyle({ fontStyle: "bold" });
+      this.updateQuenchLivePanel(stats);
+    }
+    updateQuenchLivePanel(stats) {
+      if (!this.quenchDeltaText?.active) return;
+      const delta = stats.performance - this.forged.performance;
+      const deltaColor = delta > 0 ? COLORS.mint : delta < 0 ? COLORS.red : COLORS.muted;
+      const breakColor = stats.brittleness < 30 ? COLORS.mint : stats.brittleness < 55 ? COLORS.gold : COLORS.red;
+      const state = this.quenchBladeState(stats);
+      this.quenchDeltaText.setText(`${delta > 0 ? "+" : ""}${delta}`).setColor(`#${deltaColor.toString(16).padStart(6, "0")}`);
+      this.quenchBreakText.setText(`${Math.round(stats.brittleness)}%`).setColor(`#${breakColor.toString(16).padStart(6, "0")}`);
+      this.quenchBladeStateText.setText(state.label).setColor(`#${state.color.toString(16).padStart(6, "0")}`);
+    }
+    quenchBladeState(stats) {
+      if (this.quenchHeat <= 0) return { label: "대기", color: COLORS.muted };
+      if (this.quenchHeat < 40) return { label: "가열", color: COLORS.ember };
+      if (this.quenchHeat <= 75) return { label: "경화", color: COLORS.mint };
+      if (this.quenchHeat < this.overheatLine && stats.brittleness < 55) return { label: "불안정", color: COLORS.gold };
+      return { label: "균열 위험", color: COLORS.red };
+    }
+    durabilityColor(value) {
+      return value >= 65 ? COLORS.mint : value >= 40 ? COLORS.gold : COLORS.red;
+    }
+    drawQuenchControlPanel() {
+      this.drawQuenchGauge();
+      this.panel(STAGE_GAME_X, QUENCH_BUTTON_PANEL_Y, STAGE_GAME_WIDTH, QUENCH_BUTTON_PANEL_HEIGHT, 5, 1840915, 0.94);
+      this.drawQuenchHoldButton();
+    }
+    drawQuenchGauge() {
+      this.quenchHeatGauge = this.drawProcessLinearGauge({
+        x: QUENCH_GAUGE_PANEL_X,
+        y: QUENCH_GAUGE_PANEL_Y,
+        width: QUENCH_GAUGE_PANEL_WIDTH,
+        height: QUENCH_GAUGE_PANEL_HEIGHT,
+        label: "담금질 온도",
+        value: this.quenchHeat,
+        maxValue: 100,
+        trackThickness: 14,
+        accentColor: COLORS.ember,
+        markerRatio: this.overheatLine / 100,
+        zones: [
+          { from: 0, to: 0.4, color: COLORS.ember, alpha: 0.68, state: "가열 중" },
+          { from: 0.4, to: 0.75, color: COLORS.gold, alpha: 0.92, state: "적정 온도" },
+          { from: 0.75, to: 1, color: COLORS.red, alpha: 0.9, state: "과열 위험" }
+        ],
+        formatValue: /* @__PURE__ */ __name((value) => `${Math.round(value)}%`, "formatValue"),
+        getState: /* @__PURE__ */ __name((value, _ratio, zone) => {
+          if (value <= 0) return "가열 전";
+          if (value >= this.overheatLine) return "한계 초과";
+          return zone.state;
+        }, "getState"),
+        getColor: /* @__PURE__ */ __name((value, _ratio, zone) => value <= 0 ? COLORS.muted : value >= this.overheatLine ? COLORS.red : zone.color, "getColor")
+      });
+      this.quenchStateText = this.quenchHeatGauge.stateText;
+      this.quenchHeatText = this.quenchHeatGauge.valueText;
+    }
+    drawQuenchHoldButton() {
+      const width = 374;
+      const buttonHeight = 46;
+      const buttonGroup = this.add.container(215, QUENCH_BUTTON_PANEL_Y + QUENCH_BUTTON_PANEL_HEIGHT / 2);
+      const buttonBg = this.add.rectangle(0, 0, width, buttonHeight, 2758418, 1).setStrokeStyle(1, COLORS.ember, 0.62).setInteractive({ useHandCursor: true });
+      const icon = this.add.text(-160, -6, "↧", {
+        fontFamily: MONO_FONT,
+        fontSize: "16px",
+        fontStyle: "bold",
+        color: `#${COLORS.bone.toString(16).padStart(6, "0")}`,
+        resolution: TEXT_RESOLUTION
+      }).setOrigin(0.5);
+      const title = this.add.text(-136, -9, "꾹 눌러 달군다", {
+        fontFamily: MONO_FONT,
+        fontSize: "10px",
+        fontStyle: "bold",
+        color: `#${COLORS.bone.toString(16).padStart(6, "0")}`,
+        resolution: TEXT_RESOLUTION
+      }).setOrigin(0, 0.5);
+      const subtitle = this.add.text(-136, 10, "누른 채 적정 구간까지", {
+        fontFamily: UI_FONT,
+        fontSize: "8px",
+        color: `#${COLORS.ash.toString(16).padStart(6, "0")}`,
+        resolution: TEXT_RESOLUTION
+      }).setOrigin(0, 0.5);
+      const keyText = this.add.text(162, 0, "SPACE", {
+        fontFamily: MONO_FONT,
+        fontSize: "9px",
+        fontStyle: "bold",
+        color: `#${COLORS.gold.toString(16).padStart(6, "0")}`,
+        resolution: TEXT_RESOLUTION
+      }).setOrigin(1, 0.5);
+      const accent = this.add.rectangle(0, buttonHeight / 2 - 1, width - 4, 2, COLORS.ember, 0.78);
+      buttonGroup.add([buttonBg, icon, title, subtitle, keyText, accent]);
+      this.stageLayer.add(buttonGroup);
+      this.quenchButtonGroup = buttonGroup;
+      this.quenchButtonBg = buttonBg;
+      this.quenchButtonIcon = icon;
+      this.quenchButtonTitle = title;
+      this.quenchButtonSubtitle = subtitle;
+      this.quenchButtonAccent = accent;
+      buttonBg.on("pointerover", () => {
+        if (this.quenchHolding || this.quenchReleased) return;
+        buttonBg.setFillStyle(3809561, 1).setStrokeStyle(1, COLORS.gold, 0.9);
+      });
+      buttonBg.on("pointerout", () => {
+        buttonGroup.setScale(1);
+        if (this.quenchHolding) this.releaseQuench();
+        else this.updateQuenchButtonState();
+      });
+      buttonBg.on("pointerdown", () => {
+        buttonGroup.setScale(0.96);
+        this.startHeating();
+      });
+      buttonBg.on("pointerup", () => {
+        buttonGroup.setScale(1);
+        this.releaseQuench();
+      });
+    }
+    updateQuenchButtonState() {
+      if (!this.quenchButtonBg?.active) return;
+      const active = this.quenchHolding && !this.quenchReleased;
+      this.quenchButtonBg.setFillStyle(active ? 3809561 : 2758418, 1).setStrokeStyle(1, active ? COLORS.gold : COLORS.ember, active ? 0.96 : 0.62);
+      this.quenchButtonIcon?.setColor(`#${(active ? COLORS.gold : COLORS.bone).toString(16).padStart(6, "0")}`);
+      this.quenchButtonTitle?.setText(active ? "달구는 중" : "꾹 눌러 달군다");
+      this.quenchButtonSubtitle?.setText(active ? "놓으면 즉시 담금질" : "누른 채 적정 구간까지");
+      this.quenchButtonAccent?.setFillStyle(active ? COLORS.gold : COLORS.ember, active ? 1 : 0.78);
+    }
+    startHeating() {
+      if (this.phase !== 3 || this.quenchReleased || this.quenchHolding) return;
+      this.quenchHolding = true;
+      this.updateQuenchButtonState();
+      this.tone(190, 0.1, "sawtooth", 0.04);
+    }
+    updateQuench() {
+      if (this.phase !== 3 || !this.quenchHeatGauge?.fill?.active) return;
+      const stats = calculateQuenchStats(this.forged, this.quenchHeat);
+      this.performanceText.setText(`${stats.performance}`);
+      this.durabilityText.setText(`${stats.durability}`).setColor(`#${this.durabilityColor(stats.durability).toString(16).padStart(6, "0")}`);
+      this.updateQuenchLivePanel(stats);
+      this.updateProcessLinearGauge(this.quenchHeatGauge, this.quenchHeat);
+      this.updateQuenchButtonState();
+      this.drawQuenchWeapon();
+    }
+    drawHorizontalHilt(graphics, joinX, centerY, kind, muted = false) {
+      // drawResultHilt와 같은 표를 읽는다. 담금질 화면은 joinX=98이라 자루가 길면 화면 왼쪽으로
+      // 빠져나가므로 창(118)만 88로 잘라 그린다.
+      const material = HILT_MATERIAL_BY_KIND[kind] ?? HILT_MATERIAL_DEFAULT;
+      const metal = muted ? 7559740 : 13143358;
+      const grip = muted ? 4796455 : material === "haft" ? 9127467 : 6371107;
+      const gripHighlight = muted ? 7048739 : material === "haft" ? 13212747 : 10969138;
+      const length = Math.min(88, HILT_LENGTH_BY_KIND[kind] ?? HILT_LENGTH_DEFAULT);
+      const guard = HILT_GUARD_BY_KIND[kind] ?? HILT_GUARD_DEFAULT;
+      const collarWidth = material === "haft" ? 4 : 6;
+      graphics.fillStyle(metal, 1).fillRect(joinX - collarWidth, centerY - guard / 2, collarWidth, guard);
+      graphics.fillStyle(grip, 1).fillRect(joinX - length, centerY - 7, length - 8, 14);
+      graphics.fillStyle(gripHighlight, muted ? 0.25 : 0.6).fillRect(joinX - length + 3, centerY - 5, length - 14, 3);
+      if (material === "wrapped") {
+        graphics.fillStyle(2102031, 0.9);
+        for (let x = joinX - length + 9; x < joinX - 12; x += 9) graphics.fillRect(x, centerY - 7, 2, 14);
+      } else {
+        graphics.fillStyle(6180964, muted ? 0.3 : 0.5);
+        graphics.fillRect(joinX - length + 2, centerY - 4, length - 12, 1);
+        graphics.fillRect(joinX - length + 2, centerY + 3, length - 12, 1);
+        graphics.fillStyle(metal, 1).fillRect(joinX - length + (length - 8) * 0.62, centerY - 8, 3, 16);
+      }
+      graphics.fillStyle(metal, 1).fillRect(joinX - length - 4, centerY - 10, 7, 20);
+      if (kind === "ring") graphics.lineStyle(3, metal).strokeEllipse(joinX - length - 8, centerY, 14, 11);
+    }
+    heatedColor(color, amount) {
+      const base = import_phaser.default.Display.Color.IntegerToRGB(color);
+      const target = amount < 0.72 ? { r: 255, g: 118, b: 45 } : { r: 255, g: 226, b: 170 };
+      const mixed = import_phaser.default.Display.Color.Interpolate.ColorWithColor(base, target, 100, Math.round(Math.min(1, amount) * 100));
+      return import_phaser.default.Display.Color.GetColor(mixed.r, mixed.g, mixed.b);
+    }
+    drawQuenchWeapon() {
+      if (!this.quenchGraphics) return;
+      const graphics = this.quenchGraphics;
+      graphics.clear();
+      const glow = Math.min(1, this.quenchHeat / 100);
+      const over = Math.max(0, this.quenchHeat - 75) / 25;
+      graphics.fillStyle(16731426, 0.04 + glow * 0.08).fillCircle(235, QUENCH_WEAPON_CENTER_Y - 4, 92 + glow * 60);
+      graphics.fillStyle(16757051, glow * 0.06).fillCircle(235, QUENCH_WEAPON_CENTER_Y - 4, 55 + glow * 42);
+      const cell = QUENCH_WEAPON_CELL_SIZE;
+      const hiltJoinX = 98;
+      const bladeJoinX = hiltJoinX + RESULT_HANDLE_BLADE_GAP;
+      const centerY = QUENCH_WEAPON_CENTER_Y;
+      const { weapon, axisCol: bladeAxisCol } = this.bladeTargetPlacement();
+      this.groupedBladeIngots().forEach((ingot) => {
+        const x = bladeJoinX + ingot.minRow * cell;
+        const y = centerY + (bladeAxisCol - ingot.maxCol - 1) * cell;
+        const width = (ingot.maxRow - ingot.minRow + 1) * cell;
+        const height = (ingot.maxCol - ingot.minCol + 1) * cell;
+        this.drawMixedMaterialBlock(graphics, x, y, width, height, ingot.material, ingot.layers, 1, COLORS.line, 0, 0);
+        let heatColor = this.heatedColor(mixColor(ingot.material), glow);
+        if (over > 0) heatColor = import_phaser.default.Display.Color.GetColor(210, Math.round(90 * (1 - over)), Math.round(40 * (1 - over)));
+        graphics.fillStyle(heatColor, over > 0 ? 0.78 : glow * 0.72).fillRect(x + 1, y + 1, width - 2, height - 2);
+        graphics.fillStyle(16769973, 0.08 + glow * 0.22).fillRect(x + 2, y + 2, width - 4, 2);
+        graphics.lineStyle(1, 2363661, 0.68).strokeRect(x + 0.5, y + 0.5, width - 1, height - 1);
+      });
+      for (let col = 0; col < BLADE_COLS; col += 1) {
+        for (let row = 0; row < BLADE_ROWS; row += 1) {
+          const bladeCell = this.bladeCells[col][row];
+          if (!bladeCell) continue;
+          const x = bladeJoinX + row * cell;
+          const y = centerY + (bladeAxisCol - col - 1) * cell;
+          const nextColumn = this.bladeCells[col + 1]?.[row];
+          const nextRow = this.bladeCells[col]?.[row + 1];
+          graphics.lineStyle(2, glow > 0.55 ? 16766346 : COLORS.gold, 0.52 + glow * 0.28);
+          if (nextColumn && nextColumn.pieceId !== bladeCell.pieceId) {
+            graphics.lineBetween(x + 4, y, x + cell - 4, y);
+          }
+          if (nextRow && nextRow.pieceId !== bladeCell.pieceId) {
+            graphics.lineBetween(x + cell, y + 4, x + cell, y + cell - 4);
+          }
+        }
+      }
+      const outline = this.bladeOutlineLoops(
+        this.bladeCells,
+        "horizontal",
+        cell,
+        (gridX, gridY) => [bladeJoinX + gridX * cell, centerY + (bladeAxisCol - gridY) * cell],
+        this.targetType
+      );
+      this.strokeBladeOutline(graphics, outline, glow > 0.5 ? COLORS.gold : COLORS.mint, 0.65 + glow * 0.3, 2);
+      this.drawHorizontalHilt(graphics, hiltJoinX, centerY, weapon.hilt);
+    }
+    releaseQuench() {
+      if (this.phase !== 3 || !this.quenchHolding || this.quenchReleased) return;
+      this.quenchHolding = false;
+      this.quenchReleased = true;
+      const stats = calculateQuenchStats(this.forged, this.quenchHeat);
+      this.quenchPerformance = stats.performance;
+      this.quenchBrittleness = stats.brittleness;
+      this.quenchDurability = stats.durability;
+      this.quenchCombatTraits = stats.combatTraits;
+      this.quenchCraftsmanship = stats.craftsmanship;
+      this.broken = shouldWeaponBreak(this.quenchBrittleness);
+      this.plunge();
+    }
+    overheat() {
+      if (this.quenchReleased) return;
+      this.quenchHolding = false;
+      this.quenchReleased = true;
+      this.broken = true;
+      const stats = calculateOverheatedStats(this.forged);
+      this.quenchPerformance = stats.performance;
+      this.quenchBrittleness = stats.brittleness;
+      this.quenchDurability = stats.durability;
+      this.quenchCombatTraits = stats.combatTraits;
+      this.quenchCraftsmanship = stats.craftsmanship;
+      this.tone(1200, 0.32, "sawtooth", 0.11);
+      this.toast("쇠가 타버렸다", "손을 떼도 늦었습니다", COLORS.red);
+      this.time.delayedCall(420, () => this.plunge());
+    }
+    plunge() {
+      this.tone(72, 0.22, "triangle", 0.12);
+      const canvasCenterX = QUENCH_CANVAS_X + QUENCH_CANVAS_WIDTH / 2;
+      const canvasCenterY = QUENCH_CANVAS_Y + QUENCH_CANVAS_HEIGHT / 2;
+      const canvasBottom = QUENCH_CANVAS_Y + QUENCH_CANVAS_HEIGHT;
+      const waterHeight = QUENCH_CANVAS_HEIGHT + 32;
+      const transition = this.add.container(0, 0).setDepth(70);
+      const maskShape = this.make.graphics({ add: false });
+      maskShape.fillStyle(16777215, 1).fillRoundedRect(
+        QUENCH_CANVAS_X,
+        QUENCH_CANVAS_Y,
+        QUENCH_CANVAS_WIDTH,
+        QUENCH_CANVAS_HEIGHT,
+        5
+      );
+      transition.setMask(maskShape.createGeometryMask());
+      const water = this.add.rectangle(
+        canvasCenterX,
+        canvasBottom + waterHeight / 2,
+        QUENCH_CANVAS_WIDTH + 20,
+        waterHeight,
+        COLORS.water,
+        0.98
+      );
+      const crest = this.add.rectangle(canvasCenterX, canvasBottom, QUENCH_CANVAS_WIDTH + 20, 7, COLORS.sky, 0.62).setVisible(false);
+      const flash = this.add.rectangle(
+        canvasCenterX,
+        canvasCenterY,
+        QUENCH_CANVAS_WIDTH,
+        QUENCH_CANVAS_HEIGHT,
+        15266548,
+        0
+      );
+      transition.add([water, crest, flash]);
+      const finishTransition = /* @__PURE__ */ __name(() => {
+        transition.clearMask(true);
+        maskShape.destroy();
+        transition.destroy(true);
+        this.showResult();
+      }, "finishTransition");
+      this.tweens.add({
+        targets: water,
+        y: canvasCenterY,
+        duration: this.reduceMotion ? 180 : 560,
+        ease: "Cubic.out",
+        onUpdate: /* @__PURE__ */ __name(() => {
+          crest.setVisible(true).setY(water.y - waterHeight / 2);
+        }, "onUpdate"),
+        onComplete: /* @__PURE__ */ __name(() => {
+          this.tweens.add({
+            targets: flash,
+            alpha: { from: 0.34, to: 0 },
+            duration: this.reduceMotion ? 120 : 360,
+            ease: "Quad.out"
+          });
+          for (let index = 0; index < 22; index += 1) {
+            const steam = this.add.circle(
+              import_phaser.default.Math.Between(QUENCH_CANVAS_X + 18, QUENCH_CANVAS_X + QUENCH_CANVAS_WIDTH - 18),
+              import_phaser.default.Math.Between(QUENCH_CANVAS_Y + 80, canvasBottom - 12),
+              import_phaser.default.Math.Between(8, 27),
+              15266548,
+              0.32
+            );
+            transition.add(steam);
+            this.tweens.add({
+              targets: steam,
+              y: steam.y - import_phaser.default.Math.Between(55, 145),
+              alpha: 0,
+              duration: this.reduceMotion ? 180 : import_phaser.default.Math.Between(480, 820),
+              ease: "Quad.out"
+            });
+          }
+          this.cameras.main.shake(this.reduceMotion ? 0 : 120, 35e-4);
+          this.time.delayedCall(this.reduceMotion ? 80 : 220, () => {
+            this.tweens.add({
+              targets: [water, crest],
+              y: "+=" + (QUENCH_CANVAS_HEIGHT + 70),
+              alpha: 0,
+              duration: this.reduceMotion ? 180 : 560,
+              ease: "Cubic.in",
+              onComplete: finishTransition
+            });
+          });
+        }, "onComplete")
+      });
+    }
+    showResult() {
+      this.modalLayer.removeAll(true);
+      const revealTargets = [];
+      const targetWeapon = WEAPONS[this.targetType];
+      const expected = targetWeapon.result;
+      const resultTheme = this.storedWeaponCardTheme({
+        performance: Math.max(0, this.quenchPerformance || 0),
+        averageFit: this.forged.formEvaluation?.score || 0
+      });
+      const accentColor = this.broken ? COLORS.red : resultTheme.color;
+      const shade = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 722951, 0.9).setInteractive();
+      const card = this.add.graphics().setPosition(215, 454);
+      card.fillStyle(0, 0.58).fillRoundedRect(-189, -337, 380, 690, 5);
+      card.fillStyle(COLORS.panel, 1).fillRoundedRect(-190, -345, 380, 690, 5);
+      card.lineStyle(1, COLORS.line, 1).strokeRoundedRect(-189.5, -344.5, 379, 689, 5);
+      card.fillStyle(accentColor, 1).fillRect(-189, -344, 378, 5);
+      this.drawStoredCardCrack(card, `result-${this.targetType}-${this.tileId}`, -166, -70, 332, COLORS.line);
+      const titleText = this.broken ? "깨진 쇳덩이" : expected;
+      const title = this.add.text(215, 146, titleText, { fontFamily: DISPLAY_FONT, fontSize: "27px", color: `#${(this.broken ? COLORS.red : COLORS.bone).toString(16)}`, resolution: TEXT_RESOLUTION }).setOrigin(0.5);
+      const target = this.add.text(215, 188, this.broken ? "담금질에서 갈라졌습니다" : `노린 대로 ${expected} 형태로 마감`, {
+        fontFamily: UI_FONT,
+        fontSize: "11px",
+        color: `#${(this.broken ? COLORS.red : COLORS.gold).toString(16)}`,
+        resolution: TEXT_RESOLUTION
+      }).setOrigin(0.5);
+      this.modalLayer.add([shade, card, title, target]);
+      revealTargets.push(title, target);
+      const { x: imageX, y: imageY, width: imageWidth, height: imageHeight } = RESULT_IMAGE_BOUNDS;
+      const displayImageX = 215 - imageWidth / 2;
+      const imageOffsetX = displayImageX - imageX;
+      const imageCenterX = 215;
+      const imageCenterY = imageY + imageHeight / 2;
+      const silhouette = this.add.graphics();
+      silhouette.fillStyle(COLORS.bg, 1).fillRoundedRect(displayImageX, imageY, imageWidth, imageHeight, 5);
+      silhouette.fillStyle(this.broken ? COLORS.red : COLORS.gold, 0.08).fillCircle(imageCenterX, imageCenterY, Math.min(imageWidth, imageHeight) * 0.43);
+      silhouette.lineStyle(1, this.broken ? COLORS.red : 6050114, this.broken ? 0.52 : 0.6).strokeRoundedRect(displayImageX + 0.5, imageY + 0.5, imageWidth - 1, imageHeight - 1, 5);
+      this.modalLayer.add(silhouette);
+      const resultBlade = this.drawResultWeapon().setX(displayImageX);
+      this.modalLayer.add(resultBlade);
+      const resultHilt = this.add.graphics();
+      this.drawResultHilt(resultHilt, 104 + imageOffsetX, 296, WEAPONS[this.targetType].hilt, this.broken);
+      this.modalLayer.add(resultHilt);
+      revealTargets.push(silhouette, resultBlade, resultHilt);
+      const defects = this.forged.defects;
+      const rows = [
+        ["길이", `${targetWeapon.length}`],
+        ["최대 두께", `${targetWeapon.width}`],
+        ["형태 적합도", `${Math.round((this.forged.formEvaluation?.score || 0) * 100)}%`],
+        ["공극 · 접합 · 응력", `${defects.voids.count} · ${defects.bondRisk.count} · ${defects.sectionStress.count}`],
+        ["성능", this.broken ? "—" : `${Math.max(0, this.quenchPerformance)}`],
+        ["내구", this.broken ? "—" : `${Math.max(0, Math.round(this.quenchDurability))}`],
+        ["취성", `${Math.round(this.quenchBrittleness)}%`]
+      ];
+      rows.forEach(([label, value], index) => {
+        const y = 398 + index * 38;
+        const line = this.add.rectangle(215, y + 27, 332, 1, COLORS.line, 0.45);
+        const left = this.add.text(55, y, label, { fontFamily: UI_FONT, fontSize: "11px", color: `#${COLORS.muted.toString(16)}`, resolution: TEXT_RESOLUTION });
+        const right = this.add.text(375, y, value, { fontFamily: MONO_FONT, fontSize: "12px", color: `#${COLORS.bone.toString(16)}`, resolution: TEXT_RESOLUTION }).setOrigin(1, 0);
+        this.modalLayer.add([line, left, right]);
+        revealTargets.push(line, left, right);
+      });
+      if (this.broken) {
+        const again = this.add.rectangle(215, 724, 332, 56, COLORS.emberDark, 1).setStrokeStyle(1, COLORS.ember).setInteractive({ useHandCursor: true });
+        const againText = this.add.text(215, 724, this.externalMode ? "상점으로" : "다시 벼리기", { fontFamily: UI_FONT, fontSize: "15px", color: `#${COLORS.bone.toString(16)}`, resolution: TEXT_RESOLUTION }).setOrigin(0.5);
+        again.on("pointerdown", () => this.externalMode ? this.exitToShop("broken") : this.startGame());
+        this.modalLayer.add([again, againText]);
+        revealTargets.push(again, againText);
+      } else if (this.externalMode) {
+        const store = this.add.rectangle(215, 724, 332, 56, 3490612, 1).setStrokeStyle(1, COLORS.mint, 0.95).setInteractive({ useHandCursor: true });
+        const storeText = this.add.text(215, 717, "상점으로 가져가기", { fontFamily: UI_FONT, fontSize: "14px", color: `#${COLORS.bone.toString(16)}`, resolution: TEXT_RESOLUTION }).setOrigin(0.5);
+        const storeSub = this.add.text(215, 738, targetWeapon.result, { fontFamily: UI_FONT, fontSize: "11px", color: `#${COLORS.mint.toString(16)}`, resolution: TEXT_RESOLUTION }).setOrigin(0.5);
+        store.on("pointerdown", () => this.storeCurrentWeapon());
+        this.modalLayer.add([store, storeText, storeSub]);
+        revealTargets.push(store, storeText, storeSub);
+      } else {
+        const store = this.add.rectangle(132, 724, 156, 56, 3490612, 1).setStrokeStyle(1, COLORS.mint, 0.95).setInteractive({ useHandCursor: true });
+        const storeText = this.add.text(132, 717, "무기고에 보관", { fontFamily: UI_FONT, fontSize: "13px", color: `#${COLORS.bone.toString(16)}`, resolution: TEXT_RESOLUTION }).setOrigin(0.5);
+        const storeSub = this.add.text(132, 736, `현재 ${this.storedWeapons.length}점`, { fontFamily: UI_FONT, fontSize: "11px", color: `#${COLORS.mint.toString(16)}`, resolution: TEXT_RESOLUTION }).setOrigin(0.5);
+        const again = this.add.rectangle(298, 724, 156, 56, COLORS.emberDark, 1).setStrokeStyle(1, COLORS.ember).setInteractive({ useHandCursor: true });
+        const againText = this.add.text(298, 724, "새로 제작", { fontFamily: UI_FONT, fontSize: "13px", color: `#${COLORS.bone.toString(16)}`, resolution: TEXT_RESOLUTION }).setOrigin(0.5);
+        store.on("pointerdown", () => this.storeCurrentWeapon());
+        again.on("pointerdown", () => this.startGame());
+        this.modalLayer.add([store, storeText, storeSub, again, againText]);
+        revealTargets.push(store, storeText, storeSub, again, againText);
+      }
+      this.playResultRevealImpact(shade, card, revealTargets, imageCenterX, imageCenterY);
+    }
+    playResultRevealImpact(shade, card, revealTargets, centerX, centerY) {
+      const impactColor = this.broken ? COLORS.red : COLORS.gold;
+      shade.setAlpha(0);
+      card.setAlpha(0).setScale(0.96).setY(card.y + 18);
+      revealTargets.forEach((target) => target.setAlpha(0));
+      if (this.reduceMotion) {
+        shade.setAlpha(1);
+        card.setAlpha(1).setScale(1).setY(card.y - 18);
+        revealTargets.forEach((target) => target.setAlpha(1));
+        return;
+      }
+      this.tweens.add({ targets: shade, alpha: 1, duration: 150, ease: "Quad.out" });
+      this.tweens.add({
+        targets: card,
+        alpha: 1,
+        y: card.y - 18,
+        scaleX: 1,
+        scaleY: 1,
+        duration: 320,
+        ease: "Back.out"
+      });
+      this.tweens.add({ targets: revealTargets, alpha: 1, duration: 220, delay: 110, ease: "Quad.out" });
+      const ring = this.add.circle(centerX, centerY, 18, impactColor, 0).setStrokeStyle(3, impactColor, 0.94).setScale(0.45);
+      this.modalLayer.add(ring);
+      this.tweens.add({
+        targets: ring,
+        scaleX: 4.8,
+        scaleY: 4.8,
+        alpha: 0,
+        duration: 460,
+        ease: "Cubic.out",
+        onComplete: /* @__PURE__ */ __name(() => ring.destroy(), "onComplete")
+      });
+      for (let index = 0; index < 18; index += 1) {
+        const angle = import_phaser.default.Math.FloatBetween(-Math.PI, Math.PI);
+        const distance = import_phaser.default.Math.Between(48, 128);
+        const spark = this.add.rectangle(centerX, centerY, import_phaser.default.Math.Between(7, 16), 2, impactColor, import_phaser.default.Math.FloatBetween(0.62, 1)).setAngle(import_phaser.default.Math.RadToDeg(angle));
+        this.modalLayer.add(spark);
+        this.tweens.add({
+          targets: spark,
+          x: centerX + Math.cos(angle) * distance,
+          y: centerY + Math.sin(angle) * distance,
+          alpha: 0,
+          scaleX: 0.2,
+          duration: import_phaser.default.Math.Between(280, 520),
+          ease: "Cubic.out",
+          onComplete: /* @__PURE__ */ __name(() => spark.destroy(), "onComplete")
+        });
+      }
+      this.cameras.main.shake(170, this.broken ? 8e-3 : 45e-4);
+      this.tone(this.broken ? 95 : 720, this.broken ? 0.2 : 0.13, this.broken ? "sawtooth" : "triangle", 0.075);
+    }
+    drawResultHilt(graphics, joinX, centerY, kind, broken = false) {
+      const length = HILT_LENGTH_BY_KIND[kind] ?? HILT_LENGTH_DEFAULT;
+      const guard = HILT_GUARD_BY_KIND[kind] ?? HILT_GUARD_DEFAULT;
+      const material = HILT_MATERIAL_BY_KIND[kind] ?? HILT_MATERIAL_DEFAULT;
+      const gripX = joinX - length;
+      const gripY = centerY - 7;
+      const gripWidth = length - 7;
+      const outline = 198153;
+      const accentOutline = RESULT_OUTLINE_COLOR;
+      const metal = broken ? 7360575 : 12155960;
+      const metalShadow = broken ? 4138789 : 6832929;
+      const metalHighlight = broken ? 11881266 : 15389597;
+      const grip = broken ? 3942180 : material === "haft" ? 9127467 : 6371107;
+      const gripHighlight = broken ? 8470834 : material === "haft" ? 13212747 : 11955002;
+      // 카타나 코등이는 둥근 츠바로, 목재 자루는 각진 쇠테로, 나머지는 완만한 모서리로.
+      const guardRadius = kind === "katana" ? Math.min(7, guard / 2) : material === "haft" ? 1 : 2;
+      const totalBorder = RESULT_HANDLE_OUTER_BORDER_THICKNESS + RESULT_INNER_BORDER_THICKNESS;
+      graphics.fillStyle(accentOutline, 0.96);
+      graphics.fillRoundedRect(gripX - totalBorder, gripY - totalBorder, gripWidth + totalBorder * 2, 14 + totalBorder * 2, 4);
+      graphics.fillRoundedRect(joinX - 7 - totalBorder, centerY - guard / 2 - totalBorder, 7 + totalBorder * 2, guard + totalBorder * 2, guardRadius + totalBorder);
+      graphics.fillRoundedRect(gripX - 4 - totalBorder, centerY - 10 - totalBorder, 7 + totalBorder * 2, 20 + totalBorder * 2, 4);
+      graphics.fillStyle(outline, 0.94);
+      graphics.fillRoundedRect(
+        gripX - RESULT_INNER_BORDER_THICKNESS,
+        gripY - RESULT_INNER_BORDER_THICKNESS,
+        gripWidth + RESULT_INNER_BORDER_WIDTH,
+        14 + RESULT_INNER_BORDER_WIDTH,
+        3
+      );
+      graphics.fillRoundedRect(
+        joinX - 7 - RESULT_INNER_BORDER_THICKNESS,
+        centerY - guard / 2 - RESULT_INNER_BORDER_THICKNESS,
+        7 + RESULT_INNER_BORDER_WIDTH,
+        guard + RESULT_INNER_BORDER_WIDTH,
+        guardRadius
+      );
+      graphics.fillRoundedRect(
+        gripX - 4 - RESULT_INNER_BORDER_THICKNESS,
+        centerY - 10 - RESULT_INNER_BORDER_THICKNESS,
+        7 + RESULT_INNER_BORDER_WIDTH,
+        20 + RESULT_INNER_BORDER_WIDTH,
+        3
+      );
+      graphics.fillStyle(grip, 1).fillRoundedRect(gripX, gripY, gripWidth, 14, 2);
+      graphics.fillStyle(gripHighlight, broken ? 0.24 : 0.5).fillRect(gripX + 3, gripY + 2, gripWidth - 7, 2);
+      if (material === "wrapped") {
+        // 가죽으로 감은 그립 — 세로 결속선
+        graphics.fillStyle(1313545, broken ? 0.72 : 0.9);
+        for (let x = gripX + 9; x < joinX - 10; x += 9) graphics.fillRect(x, gripY, 2, 14);
+      } else {
+        // 목재 자루 — 결을 따라 흐르는 가로 무늬 + 손에 닿는 위치의 쇠고리(ferrule)
+        graphics.fillStyle(broken ? 2827313 : 6180964, broken ? 0.4 : 0.5);
+        graphics.fillRect(gripX + 2, gripY + 3, gripWidth - 6, 1);
+        graphics.fillRect(gripX + 5, gripY + 7, gripWidth - 10, 1);
+        graphics.fillRect(gripX + 2, gripY + 11, gripWidth - 6, 1);
+        const ferruleX = gripX + gripWidth * 0.62;
+        graphics.fillStyle(metalShadow, 1).fillRect(ferruleX, gripY - 1, 3, 16);
+        graphics.fillStyle(metalHighlight, broken ? 0.3 : 0.5).fillRect(ferruleX + 1, gripY, 1, 14);
+      }
+      graphics.fillStyle(metalShadow, 1).fillRoundedRect(joinX - 12, centerY - 9, 7, 18, 2);
+      graphics.fillStyle(metal, 1).fillRoundedRect(joinX - 7, centerY - guard / 2, 7, guard, guardRadius);
+      graphics.fillStyle(metalHighlight, broken ? 0.26 : 0.42).fillRect(joinX - 6, centerY - guard / 2 + 2, 2, guard - 4);
+      graphics.fillStyle(metal, 1).fillRoundedRect(gripX - 4, centerY - 10, 7, 20, 2);
+      graphics.fillStyle(metalHighlight, broken ? 0.24 : 0.38).fillRect(gripX - 3, centerY - 8, 2, 16);
+      if (material === "haft") {
+        // 목재 자루는 서양식 코등이가 없다 — 손잡이머리 위아래에 얇은 쇠테만 두른다
+        graphics.fillStyle(metalShadow, broken ? 0.5 : 0.7).fillRect(gripX - 4, centerY - 10 + 3, 7, 1);
+        graphics.fillStyle(metalShadow, broken ? 0.5 : 0.7).fillRect(gripX - 4, centerY + 10 - 4, 7, 1);
+      } else {
+        graphics.fillStyle(accentOutline, broken ? 0.35 : 0.55).fillCircle(gripX - 0.5, centerY, 1.4);
+      }
+      if (kind === "ring") {
+        // 레이피어식 너클보우 — 완전한 원 대신 살짝 눌린 타원으로, 감싸쥐는 형태감을 준다
+        const ringX = gripX - 8;
+        const ringMaterialWidth = 3.5;
+        graphics.lineStyle(ringMaterialWidth + totalBorder * 2, accentOutline, 0.96).strokeEllipse(ringX, centerY, 14, 11);
+        graphics.lineStyle(ringMaterialWidth + RESULT_INNER_BORDER_WIDTH, outline, 0.94).strokeEllipse(ringX, centerY, 14, 11);
+        graphics.lineStyle(3.5, metal, 1).strokeEllipse(ringX, centerY, 14, 11);
+        graphics.lineStyle(1, metalHighlight, broken ? 0.65 : 0.78).strokeEllipse(ringX, centerY, 14, 11);
+      }
+      if (broken) {
+        graphics.fillStyle(10894891, 0.3).fillCircle(joinX - 18, centerY + 3, 3);
+        graphics.fillStyle(2363666, 0.42).fillCircle(gripX + length * 0.42, centerY - 3, 4);
+      }
+    }
+    drawResultWeapon() {
+      const { x: textureX, y: textureY, width: textureWidth, height: textureHeight } = RESULT_IMAGE_BOUNDS;
+      const cell = FORGED_WEAPON_CELL_SIZE;
+      const joinX = 104 - textureX + RESULT_HANDLE_BLADE_GAP;
+      const centerY = 296 - textureY;
+      this.resultTextureKey = "forged-result-surface";
+      this.createBladeSurfaceTexture({
+        textureKey: this.resultTextureKey,
+        width: textureWidth,
+        height: textureHeight,
+        cells: this.bladeCells,
+        weaponType: this.targetType,
+        cell,
+        joinX,
+        centerY,
+        broken: this.broken
+      });
+      return this.add.image(textureX, textureY, this.resultTextureKey).setOrigin(0);
+    }
+    createBladeSurfaceTexture({ textureKey, width, height, cells, weaponType, cell, joinX, centerY, broken = false }) {
+      const { axisCol: bladeAxisCol } = this.bladeTargetPlacement(weaponType);
+      const outlineLoops = this.bladeOutlineLoops(
+        cells,
+        "horizontal",
+        cell,
+        (gridX, gridY) => [joinX + gridX * cell, centerY + (bladeAxisCol - gridY) * cell],
+        weaponType
+      );
+      const outline = loopsToPath2D(outlineLoops);
+      if (this.textures.exists(textureKey)) this.textures.remove(textureKey);
+      const texture = this.textures.createCanvas(textureKey, width, height);
+      const context = texture.context;
+      const baseMetal = this.bladeBaseColor(cells);
+      context.clearRect(0, 0, width, height);
+      context.save();
+      context.clip(outline, "evenodd");
+      this.paintResultMetal(context, outline, baseMetal, width, height, joinX, cell, cells, broken);
+      this.paintBlurredResultTileSurface(
+        context,
+        outline,
+        joinX,
+        centerY,
+        bladeAxisCol,
+        cell,
+        width,
+        height,
+        cells,
+        broken
+      );
+      if (broken) this.paintResultDamage(context, joinX, centerY, bladeAxisCol, cell, cells);
+      context.restore();
+      this.strokeResultBladeOutline(context, outlineLoops, RESULT_OUTLINE_COLOR, 0.96, RESULT_BLADE_OUTLINE_WIDTH);
+      context.save();
+      context.clip(outline, "evenodd");
+      this.strokeResultBladeOutline(context, outlineLoops, 198153, 0.94, RESULT_INNER_BORDER_WIDTH);
+      context.restore();
+      texture.refresh();
+      return texture;
+    }
+    strokeResultBladeOutline(context, loops, color, alpha, width) {
+      context.save();
+      context.lineJoin = "miter";
+      context.lineCap = "butt";
+      context.miterLimit = 4;
+      context.strokeStyle = this.bladeCanvasColor(color, alpha);
+      context.lineWidth = width;
+      context.beginPath();
+      loops.forEach((loop) => {
+        if (loop.length < 2) return;
+        context.moveTo(loop[0][0], loop[0][1]);
+        for (let index = 1; index < loop.length; index += 1) context.lineTo(loop[index][0], loop[index][1]);
+        context.closePath();
+      });
+      context.stroke();
+      context.restore();
+    }
+    bladeBaseColor(cells = this.bladeCells) {
+      const material = emptyMaterial();
+      let count = 0;
+      cells.forEach(
+        (column) => column.forEach((bladeCell) => {
+          if (!bladeCell) return;
+          bladeCell.material.forEach((weight, index) => {
+            material[index] += weight;
+          });
+          count += 1;
+        })
+      );
+      if (!count) return MATERIALS[0].color;
+      return mixColor(material.map((weight) => weight / count));
+    }
+    blendBladeColor(from, to, amount) {
+      const start = import_phaser.default.Display.Color.IntegerToRGB(from);
+      const end = import_phaser.default.Display.Color.IntegerToRGB(to);
+      const ratio = import_phaser.default.Math.Clamp(amount, 0, 1);
+      return import_phaser.default.Display.Color.GetColor(
+        Math.round(start.r + (end.r - start.r) * ratio),
+        Math.round(start.g + (end.g - start.g) * ratio),
+        Math.round(start.b + (end.b - start.b) * ratio)
+      );
+    }
+    bladeCanvasColor(color, alpha = 1) {
+      const { r, g, b } = import_phaser.default.Display.Color.IntegerToRGB(color);
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+    paintBlurredResultTileSurface(context, outline, joinX, centerY, bladeAxisCol, cell, width, height, resultCells, broken = this.broken) {
+      const surface = document.createElement("canvas");
+      surface.width = width;
+      surface.height = height;
+      const surfaceContext = surface.getContext("2d");
+      if (!surfaceContext) return;
+      for (let row = 0; row < BLADE_ROWS; row += 1) {
+        for (let column = 0; column < BLADE_COLS; column += 1) {
+          const bladeCell = resultCells[column]?.[row];
+          if (!bladeCell) continue;
+          const x = joinX + row * cell;
+          const y = centerY + (bladeAxisCol - column - 1) * cell;
+          const materialColor = mixColor(bladeCell.material);
+          const forgedTone = broken ? this.blendBladeColor(materialColor, 9124137, 0.3) : this.blendBladeColor(materialColor, 12108483, 0.16);
+          surfaceContext.fillStyle = this.bladeCanvasColor(forgedTone, 1);
+          surfaceContext.fillRect(x - 0.5, y - 0.5, cell + 1, cell + 1);
+        }
+      }
+      surfaceContext.lineWidth = broken ? 2.2 : 1.6;
+      surfaceContext.lineCap = "round";
+      surfaceContext.strokeStyle = broken ? "rgba(49, 18, 17, 0.5)" : "rgba(18, 26, 31, 0.34)";
+      for (let row = 0; row < BLADE_ROWS; row += 1) {
+        for (let column = 0; column < BLADE_COLS; column += 1) {
+          const bladeCell = resultCells[column]?.[row];
+          if (!bladeCell) continue;
+          const x = joinX + row * cell;
+          const y = centerY + (bladeAxisCol - column - 1) * cell;
+          const nextColumn = resultCells[column + 1]?.[row];
+          const nextRow = resultCells[column]?.[row + 1];
+          surfaceContext.beginPath();
+          if (nextColumn && nextColumn.pieceId !== bladeCell.pieceId) {
+            surfaceContext.moveTo(x + 2, y);
+            surfaceContext.lineTo(x + cell - 2, y);
+          }
+          if (nextRow && nextRow.pieceId !== bladeCell.pieceId) {
+            surfaceContext.moveTo(x + cell, y + 2);
+            surfaceContext.lineTo(x + cell, y + cell - 2);
+          }
+          surfaceContext.stroke();
+        }
+      }
+      context.save();
+      context.clip(outline, "evenodd");
+      context.filter = "blur(2px)";
+      context.globalCompositeOperation = broken ? "multiply" : "soft-light";
+      context.globalAlpha = broken ? 0.44 : 0.68;
+      context.drawImage(surface, 0, 0);
+      context.restore();
+    }
+    paintResultMetal(context, outline, baseMetal, width, height, joinX, cell, resultCells, broken = this.broken) {
+      const gradient = context.createLinearGradient(0, 18, 0, height - 18);
+      if (broken) {
+        gradient.addColorStop(0, this.bladeCanvasColor(this.blendBladeColor(baseMetal, 1445650, 0.76)));
+        gradient.addColorStop(0.24, this.bladeCanvasColor(this.blendBladeColor(baseMetal, 8138533, 0.66)));
+        gradient.addColorStop(0.43, this.bladeCanvasColor(this.blendBladeColor(baseMetal, 12610115, 0.48)));
+        gradient.addColorStop(0.67, this.bladeCanvasColor(this.blendBladeColor(baseMetal, 4858655, 0.58)));
+        gradient.addColorStop(1, this.bladeCanvasColor(this.blendBladeColor(baseMetal, 1051920, 0.82)));
+      } else {
+        gradient.addColorStop(0, this.bladeCanvasColor(this.blendBladeColor(baseMetal, 528408, 0.62)));
+        gradient.addColorStop(0.2, this.bladeCanvasColor(this.blendBladeColor(baseMetal, 5464426, 0.2)));
+        gradient.addColorStop(0.38, this.bladeCanvasColor(this.blendBladeColor(baseMetal, 14936811, 0.6)));
+        gradient.addColorStop(0.49, this.bladeCanvasColor(this.blendBladeColor(baseMetal, 10267053, 0.3)));
+        gradient.addColorStop(0.72, this.bladeCanvasColor(baseMetal));
+        gradient.addColorStop(1, this.bladeCanvasColor(this.blendBladeColor(baseMetal, 1120288, 0.64)));
+      }
+      context.fillStyle = gradient;
+      context.fill(outline, "evenodd");
+      if (broken || !RESULT_BLADE_GLOSS_ENABLED) return;
+      let lastOccupiedRow = -1;
+      for (let row = 0; row < BLADE_ROWS; row += 1) {
+        if (resultCells.some((column) => column[row])) lastOccupiedRow = row;
+      }
+      const tipX = lastOccupiedRow >= 0 ? joinX + (lastOccupiedRow + 1) * cell : width;
+      const bladeLength = Math.max(cell, tipX - joinX);
+      const sheenReach = Math.min(bladeLength, Math.max(cell * 6, bladeLength * 0.78));
+      const sheenEndX = tipX - sheenReach;
+      context.save();
+      context.globalCompositeOperation = "screen";
+      const sheen = context.createLinearGradient(tipX, 0, sheenEndX, 0);
+      sheen.addColorStop(0, "rgba(255,255,255,0.5)");
+      sheen.addColorStop(0.08, "rgba(242,250,249,0.3)");
+      sheen.addColorStop(0.3, "rgba(224,239,239,0.14)");
+      sheen.addColorStop(0.68, "rgba(210,230,232,0.05)");
+      sheen.addColorStop(1, "rgba(255,255,255,0)");
+      context.fillStyle = sheen;
+      context.fillRect(sheenEndX, 0, sheenReach, height);
+      const tipFaceWidth = Math.min(14, cell * 1.1);
+      const tipFace = context.createLinearGradient(tipX - tipFaceWidth, 0, tipX, 0);
+      tipFace.addColorStop(0, "rgba(255,255,255,0)");
+      tipFace.addColorStop(0.72, "rgba(246,252,251,0.12)");
+      tipFace.addColorStop(1, "rgba(255,255,255,0.32)");
+      context.fillStyle = tipFace;
+      context.fillRect(tipX - tipFaceWidth, 0, tipFaceWidth, height);
+      context.lineWidth = 0.75;
+      for (let index = 0; index < 9; index += 1) {
+        const y = 28 + (index * 17 + 9) % 96;
+        const grainRange = Math.max(20, Math.round(bladeLength * 0.42));
+        const x = tipX - 10 - index * 19 % grainRange;
+        const endX = Math.max(joinX + 8, x - 54 - index % 4 * 18);
+        context.strokeStyle = `rgba(232, 242, 242, ${0.045 + index % 3 * 0.018})`;
+        context.beginPath();
+        context.moveTo(x, y);
+        context.lineTo(endX, y + (index % 2 ? 0.5 : -0.5));
+        context.stroke();
+      }
+      context.restore();
+    }
+    paintResultDamage(context, joinX, centerY, bladeAxisCol, cell, resultCells) {
+      let seed = 2135587861;
+      const random = /* @__PURE__ */ __name(() => {
+        seed = seed * 1664525 + 1013904223 >>> 0;
+        return seed / 4294967296;
+      }, "random");
+      context.save();
+      context.globalCompositeOperation = "multiply";
+      for (let index = 0; index < 22; index += 1) {
+        const x = joinX + 6 + random() * (BLADE_ROWS * cell - 12);
+        const y = centerY - 49 + random() * 98;
+        const radiusX = 3 + random() * 12;
+        const radiusY = 1.5 + random() * 6;
+        context.fillStyle = this.bladeCanvasColor(index % 3 === 0 ? 10895399 : 3676442, 0.12 + random() * 0.18);
+        context.beginPath();
+        context.ellipse(x, y, radiusX, radiusY, random() * 0.8 - 0.4, 0, Math.PI * 2);
+        context.fill();
+      }
+      context.restore();
+      const occupiedRows = [];
+      for (let row = 0; row < BLADE_ROWS; row += 1) {
+        if (resultCells.some((column) => column[row])) occupiedRows.push(row);
+      }
+      const fractureRows = [.../* @__PURE__ */ new Set([occupiedRows[Math.floor(occupiedRows.length * 0.38)], occupiedRows[Math.floor(occupiedRows.length * 0.72)]])].filter(
+        (row) => Number.isInteger(row)
+      );
+      fractureRows.forEach((row, fractureIndex) => {
+        const columns = [];
+        for (let column = 0; column < BLADE_COLS; column += 1) {
+          if (resultCells[column][row]) columns.push(column);
+        }
+        if (columns.length < 2) return;
+        const minimum = Math.min(...columns);
+        const maximum = Math.max(...columns);
+        const x = joinX + (row + 0.5) * cell;
+        const top = centerY + (bladeAxisCol - maximum - 1) * cell;
+        const bottom = centerY + (bladeAxisCol - minimum) * cell;
+        const span = bottom - top;
+        const points = [
+          [x - 4 + fractureIndex * 2, top - 2],
+          [x + 3, top + span * 0.27],
+          [x - 2, top + span * 0.53],
+          [x + 4 - fractureIndex * 2, top + span * 0.77],
+          [x - 1, bottom + 2]
+        ];
+        const strokeCrack = /* @__PURE__ */ __name((width, color, alpha) => {
+          context.lineWidth = width;
+          context.strokeStyle = this.bladeCanvasColor(color, alpha);
+          context.lineCap = "round";
+          context.lineJoin = "miter";
+          context.beginPath();
+          context.moveTo(points[0][0], points[0][1]);
+          for (let index = 1; index < points.length; index += 1) context.lineTo(points[index][0], points[index][1]);
+          context.stroke();
+        }, "strokeCrack");
+        strokeCrack(3.1, 591624, 0.92);
+        strokeCrack(0.8, 15691077, 0.72);
+        const branch = points[2];
+        context.lineWidth = 1.7;
+        context.strokeStyle = this.bladeCanvasColor(1050890, 0.86);
+        context.beginPath();
+        context.moveTo(branch[0], branch[1]);
+        context.lineTo(branch[0] + (fractureIndex ? -11 : 12), branch[1] + 6);
+        context.lineTo(branch[0] + (fractureIndex ? -17 : 19), branch[1] + 3);
+        context.stroke();
+      });
+    }
+  };
+  __name(_ForgeScene, "ForgeScene");
+  var ForgeScene = _ForgeScene;
+
+  // src/game/createForgeGame.js
+  function createForgeGame(parent = "game", sceneData = {}) {
+    return new import_phaser2.default.Game({
+      type: import_phaser2.default.AUTO,
+      parent,
+      banner: false,
+      backgroundColor: "#161210",
+      pixelArt: false,
+      antialias: true,
+      antialiasGL: true,
+      roundPixels: true,
+      scale: {
+        mode: import_phaser2.default.Scale.FIT,
+        autoCenter: import_phaser2.default.Scale.CENTER_BOTH,
+        width: GAME_WIDTH,
+        height: GAME_HEIGHT
+      },
+      scene: [],
+      input: {
+        activePointers: 3
+      },
+      render: {
+        powerPreference: "high-performance"
+      },
+      callbacks: {
+        postBoot(game) {
+          game.scene.add("forge", ForgeScene, true, sceneData);
+        }
+      }
+    });
+  }
+  __name(createForgeGame, "createForgeGame");
+
+  // phaser-standalone/entry.js
+  var mount = document.querySelector("#forge-root");
+  var bootScreen = document.querySelector("#boot-screen");
+  var bootCopy = document.querySelector("#boot-copy");
+  var bootAction = document.querySelector("#boot-action");
+  function revealGame() {
+    mount?.setAttribute("aria-busy", "false");
+    bootScreen?.classList.add("is-ready");
+    window.setTimeout(() => bootScreen?.remove(), 520);
+  }
+  __name(revealGame, "revealGame");
+  function showBootError(error) {
+    mount?.setAttribute("aria-busy", "false");
+    bootScreen?.classList.add("has-error");
+    if (bootAction) bootAction.disabled = false;
+    if (bootCopy) bootCopy.textContent = "게임을 시작하지 못했습니다. 이 파일을 Chrome 또는 Edge에서 다시 열어주세요.";
+    console.error(error);
+  }
+  __name(showBootError, "showBootError");
+  async function openForge(data = {}) {
+    try {
+      mount?.setAttribute("aria-busy", "true");
+      if (bootScreen && !bootScreen.isConnected) mount?.prepend(bootScreen);
+      bootScreen?.classList.remove("is-ready", "has-error");
+      if (bootAction) bootAction.disabled = true;
+      if (bootCopy) bootCopy.textContent = "정련판과 담금질 수조를 준비하고 있습니다.";
+      await document.fonts?.ready;
+      if (window.__forgeGame) {
+        // 인스턴스는 하나만 유지한다. destroy/생성을 반복하면 모바일 웹뷰가 WebGL 컨텍스트를 잃는다.
+        window.__forgeGame.scale.refresh();
+        window.__forgeGame.scene.start("forge", data);
+        requestAnimationFrame(() => requestAnimationFrame(revealGame));
+        return window.__forgeGame;
+      }
+      const canvasObserver = new MutationObserver(() => {
+        if (!mount?.querySelector("canvas")) return;
+        canvasObserver.disconnect();
+        requestAnimationFrame(() => requestAnimationFrame(revealGame));
+      });
+      canvasObserver.observe(mount, { childList: true });
+      window.__forgeGame = createForgeGame("forge-root", data);
+      if (mount.querySelector("canvas")) {
+        canvasObserver.disconnect();
+        requestAnimationFrame(() => requestAnimationFrame(revealGame));
+      }
+      return window.__forgeGame;
+    } catch (error) {
+      showBootError(error);
+      throw error;
+    }
+  }
+  __name(openForge, "openForge");
+  window.openForge = openForge;
+  bootAction?.addEventListener("click", () => {
+    openForge().catch(() => {
+    });
+  });
+})();
+</script>
+  </body>
+</html>

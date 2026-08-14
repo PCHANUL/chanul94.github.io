@@ -1,0 +1,3339 @@
+<!DOCTYPE html>
+<!--
+════════════════════════════════════════════════════════════════
+  명검은 반드시 부러진다 — 통합 프로토타입
+════════════════════════════════════════════════════════════════
+
+  [찾는 법]  아래 태그를 그대로 검색하면 해당 구획으로 바로 간다.
+             줄번호는 편집하면 낡지만, 태그는 낡지 않는다.
+
+  ── CSS ────────────────────────────────────────────────
+  §css.top        상단 날짜 · 뒤로가기
+  §css.terrain    암반 층리 · 배경
+  §css.map        지도 스크롤뷰 · 노드 · 토큰
+  §css.greet      접객 화면 · 용사/무기 카드
+  §css.peek       지도 보기 · 상단 버튼
+  §css.ldrawer    지도 위 대여 서랍
+  §css.page       상점 · 개봉 페이지
+  §css.night      개봉 오버레이
+  §css.envelope   봉투 · 뜯기
+  §css.result     결과 카드 · 마모 · 파손 · 쪽지
+
+  ── core ── 규칙. DOM을 건드리지 않는다 ────────────────
+  §core.dungeons  던전 · 키워드 · 대사
+  §core.entity    용사 풀 · 등급 · makeWeapon
+  §core.state     S — 하루 상태
+  §core.outcome   rollOutcome · reactionOf   ← 확률
+  §core.discover  bringBack — 키워드/재료 발견
+  §core.unlock    소문 해금
+  §core.day       nextDay · makeGuests
+
+  ── ui ── 공용 부품 ────────────────────────────────────
+  §ui.rand        mulberry32 · crackSVG
+  §ui.icon        아이콘 · 무기 실루엣
+  §ui.sheet       던전 상세 시트
+  §ui.toast       토스트
+
+  ── screens ────────────────────────────────────────────
+  §scr.greet      접객 — 스와이프 · 건네기
+  §scr.peek       지도 보기 — 던전 카드 뒷면에 소문
+  §scr.ldrawer    지도 위 대여 서랍 — 행 탭하면 토큰으로
+  §scr.dfocus     지도 카드 — 가운데로 불러내기 · 뒤집기
+  §scr.map        지도 렌더 · 토큰
+  §scr.page       상점 · 개봉 페이지
+  §scr.seq        저녁 파견 시퀀스
+  §scr.arrival    아침 진행 · 귀환
+  §scr.night      개봉 — 봉투 · 결과
+  §boot           시작
+
+  [규율]  core 구획의 함수는 document / $() 를 쓰지 않는다.
+          Vite 이관 시 core 는 그대로 잘라 붙일 수 있어야 한다.
+
+  [구현]    제작소 → 재료 3개 선택 팝업 → 벼리기
+════════════════════════════════════════════════════════════════
+-->
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>던전 지도 프로토타입</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Noto+Sans+KR:wght@400;500;700&family=JetBrains+Mono:wght@500;700&display=swap');
+
+:root{
+  --bg-void:#161210;
+  --bg-card:#251e17;
+  --ink:#e9ddc6;
+  --ink-dim:#a2917a;
+  --line-metal:#5c5142;
+
+  --grade-common:#6b6355;
+  --grade-mid:#8f9aa3;
+  --grade-high:#c9963f;
+  --grade-unique:#cf5b2e;
+
+  --attr-frost:#5f93b0;
+  --attr-fire:#9c3f26;
+  --attr-holy:#c7a542;
+  --attr-none:#7d7568;
+
+  --dur-high:#7a9b76;
+  --dur-mid:#c9963f;
+  --dur-low:#9c3f26;
+
+  --stamp-ink:#8c3a2c;
+
+  --font-display:'Black Han Sans', sans-serif;
+  --font-body:'Noto Sans KR', sans-serif;
+  --font-mono:'JetBrains Mono', monospace;
+}
+*{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+html,body{ height:100%; }
+body{
+  margin:0; background:radial-gradient(ellipse at 50% -10%, #241c15 0%, var(--bg-void) 55%);
+  color:var(--ink); font-family:var(--font-body);
+  display:flex; align-items:center; justify-content:center; padding:16px;
+}
+body.night-open{ overflow:hidden; overscroll-behavior:none; }
+.phone{
+  width:390px; height:600px; max-height:90vh;
+  background:radial-gradient(ellipse at 50% 0%, #241c15 0%, var(--bg-void) 60%);
+  border-radius:22px; border:1px solid var(--line-metal);
+  box-shadow:0 18px 40px rgba(0,0,0,.55);
+  position:relative; overflow:hidden; display:flex; flex-direction:column;
+}
+
+/* ══ [§css.top] 상단 ══ */
+.top{ padding:12px 12px 6px; flex-shrink:0; z-index:14; }
+.top__bar{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.day{ font-family:var(--font-mono); font-size:11px; letter-spacing:.16em; color:var(--ink-dim); text-align:center; flex:1; }
+.backbtn{
+  width:42px; height:42px; flex-shrink:0; display:flex; align-items:center; justify-content:center;
+  background:var(--bg-card); border:1px solid var(--line-metal); border-radius:7px;
+  color:var(--ink); font-size:24px; line-height:1; cursor:pointer; transition:border-color .15s, color .15s, transform .12s;
+}
+.backbtn:active{ transform:scale(.94); }
+.backbtn:hover{ border-color:var(--grade-unique); color:var(--ink); }
+.backbtn.hidden{ opacity:0; pointer-events:none; }
+.topbtn{
+  display:flex; align-items:center; gap:6px; background:var(--bg-card);
+  border:1px solid var(--line-metal); border-radius:4px; padding:6px 9px;
+  cursor:pointer; flex-shrink:0; transition:border-color .15s, opacity .3s;
+}
+.topbtn:hover{ border-color:var(--grade-unique); }
+.topbtn__label{ font-family:var(--font-mono); font-size:8.5px; letter-spacing:.08em; color:var(--ink-dim); }
+.topbtn__count{
+  min-width:17px; height:17px; border-radius:9px; padding:0 4px; background:var(--grade-unique);
+  color:#1a1512; font-family:var(--font-mono); font-weight:700; font-size:10px;
+  display:flex; align-items:center; justify-content:center;
+}
+.topbtn--off{ opacity:.32; pointer-events:none; }
+
+/* ══ [§css.terrain] 지형 배경 ══ */
+.backdrop{
+  position:absolute; left:0; top:0; width:100%; height:100%;
+  pointer-events:none; z-index:1;
+}
+/* 깊은 곳에 깔리는 안개 */
+.mist{
+  position:absolute; left:-10%; width:120%; height:70px; pointer-events:none; z-index:3;
+  background:radial-gradient(ellipse at 50% 50%, rgba(150,160,170,.075) 0%, rgba(150,160,170,0) 70%);
+  animation:mistDrift 22s ease-in-out infinite;
+}
+@keyframes mistDrift{ 0%,100%{ transform:translateX(-18px);} 50%{ transform:translateX(18px);} }
+/* 화롯불 잔불 */
+.ember{
+  position:absolute; width:2px; height:2px; border-radius:50%;
+  background:var(--attr-fire); pointer-events:none; z-index:3; opacity:0;
+  animation:emberRise 5.5s linear infinite;
+}
+@keyframes emberRise{
+  0%{ opacity:0; transform:translateY(0) scale(.6);} 12%{ opacity:.85;}
+  70%{ opacity:.45;} 100%{ opacity:0; transform:translateY(-58px) scale(.3);}
+}
+
+/* 이정표 — 턴이 끊기는 자리 */
+.milestone{
+  position:absolute; margin-left:-9px; width:18px; height:18px; z-index:4;
+  color:#4e4438; pointer-events:none;
+}
+.milestone svg{ width:18px; height:18px; }
+
+/* ══ [§css.map] 지도 — 스크롤뷰 ══
+   부모(wrapper)가 flex 컨테이너가 아니므로 flex:1은 듣지 않는다.
+   inset:0으로 스크롤 컨테이너의 높이를 확정해야 overflow가 작동한다. */
+.map{
+  position:absolute; inset:0; overflow-y:auto; overflow-x:hidden;
+  -webkit-overflow-scrolling:touch; overscroll-behavior:contain;
+}
+.map::-webkit-scrollbar{ width:0; display:none; }
+.map__inner{ position:relative; width:100%; }
+
+/* 스크롤 뷰포트 가장자리 — 위아래로 어둠에 잠기게 */
+.map__fade{
+  position:absolute; left:0; right:0; height:46px; pointer-events:none; z-index:11;
+}
+.map__fade--top{ top:0; background:linear-gradient(180deg, #191411 0%, rgba(25,20,17,0) 100%); }
+.map__fade--bot{ bottom:0; background:linear-gradient(0deg, #171310 0%, rgba(23,19,16,0) 100%); }
+
+/* 깊이 눈금 — 세로축이 곧 거리라는 것을 읽히게 */
+.tick{
+  position:absolute; left:8px; display:flex; align-items:center; gap:6px;
+  font-family:var(--font-mono); font-size:8px; letter-spacing:.14em; color:#4c4237;
+  pointer-events:none; z-index:4;
+}
+.tick::after{ content:''; display:block; width:340px; height:1px; background:linear-gradient(90deg, #352d26 0%, rgba(53,45,38,0) 78%); }
+
+/* 스크롤 힌트 */
+.scrollhint{
+  position:absolute; left:50%; transform:translateX(-50%); bottom:52px; z-index:12;
+  font-family:var(--font-mono); font-size:8.5px; letter-spacing:.16em; color:var(--ink-dim);
+  opacity:0; transition:opacity .5s; pointer-events:none;
+}
+.scrollhint.on{ opacity:.7; animation:hintFloat 2.4s ease-in-out infinite; }
+@keyframes hintFloat{ 0%,100%{ transform:translate(-50%,0);} 50%{ transform:translate(-50%,-4px);} }
+
+/* 어둠 — 미해금 구역 */
+.dark{
+  position:absolute; left:0; right:0; top:0; height:170px;
+  background:linear-gradient(180deg, #0b0908 0%, #0d0a08 42%, rgba(13,10,8,.8) 70%, rgba(22,18,16,0) 100%);
+  pointer-events:none; z-index:5;
+}
+.dark__label{
+  position:absolute; left:0; right:0; top:34px; text-align:center;
+  font-family:var(--font-mono); font-size:8.5px; letter-spacing:.22em; color:#3d342c;
+}
+.rumor{
+  position:absolute; top:76px; text-align:center; width:118px;
+  font-family:var(--font-display); font-size:14px; color:#57493c;
+  filter:blur(1.1px); opacity:0; transition:opacity 1.1s ease;
+}
+.rumor.on{ opacity:1; animation:rumorPulse 4.2s ease-in-out infinite; }
+.rumor small{ display:block; font-family:var(--font-mono); font-size:7.5px; letter-spacing:.1em; margin-top:3px; filter:blur(.4px); }
+@keyframes rumorPulse{ 0%,100%{ opacity:.55; } 50%{ opacity:.9; } }
+
+/* 레인 — 던전에서 상점까지의 길 */
+.lane{ position:absolute; width:2px; background:repeating-linear-gradient(180deg, var(--line-metal) 0 3px, transparent 3px 9px); opacity:.42; }
+
+/* 던전 카드 (지도용 소형) */
+.dnode{
+  position:absolute; width:112px; margin-left:-56px;
+  background:var(--bg-card); border:1px solid var(--line-metal); border-radius:5px;
+  box-shadow:0 6px 16px rgba(0,0,0,.5); cursor:pointer;
+  transition:border-color .18s, transform .3s cubic-bezier(.34,1.4,.64,1),
+             width .45s cubic-bezier(.4,.15,.2,1), margin-left .45s cubic-bezier(.4,.15,.2,1);
+  z-index:6; perspective:900px; background:transparent; border:none; box-shadow:none;
+}
+.dnode__inner{
+  position:relative; width:100%; transform-style:preserve-3d;
+  transition:transform .5s cubic-bezier(.4,.15,.2,1);
+}
+.dnode.flipped{ width:224px; margin-left:-112px; z-index:30; }
+.dnode.flipped .dnode__inner{ transform:rotateY(180deg); }
+.dnode__face{
+  backface-visibility:hidden; -webkit-backface-visibility:hidden;
+  background:var(--bg-card); border:1px solid var(--line-metal); border-radius:5px;
+  box-shadow:0 6px 16px rgba(0,0,0,.5); overflow:hidden;
+}
+.dnode__front{ position:relative; }
+.dnode__back{ position:absolute; inset:0; transform:rotateY(180deg); }
+.dnode.flipped .dnode__front{ position:absolute; inset:0; }
+.dnode.flipped .dnode__back{ position:relative; inset:auto; }
+.dnode:hover .dnode__face{ border-color:var(--accent); }
+
+/* 카드를 화면 가운데로 불러내는 층 —
+   지도 스크롤 위에 얹혀서, 원래 자리의 카드는 숨겨두고
+   같은 카드를 이 층에서 다시 그려 가운데로 날아가게 한다. */
+.dfocus{ position:absolute; inset:0; z-index:32; opacity:0; pointer-events:none; transition:opacity .3s; }
+.dfocus.on{ opacity:1; pointer-events:auto; background:rgba(10,8,7,.5); }
+.dfocus-card{
+  left:50%; top:50%; margin:0 !important; z-index:33;
+  transition:transform .5s cubic-bezier(.4,.15,.2,1), width .45s cubic-bezier(.4,.15,.2,1) !important;
+  max-height:78%;
+}
+.dfocus-card .dnode__face{ box-shadow:0 20px 46px rgba(0,0,0,.6); }
+.dfocus-card .dnode__back .dback{ max-height:296px; overflow-y:auto; }
+.dfocus-card .dnode__back .dback::-webkit-scrollbar{ display:none; }
+.token.ping{ animation:tokPing 1.1s ease-out; z-index:20; }
+@keyframes tokPing{
+  0%{ transform:scale(1); filter:none; }
+  22%{ transform:scale(1.5); filter:drop-shadow(0 0 12px var(--accent)) brightness(1.5); }
+  100%{ transform:scale(1); filter:none; }
+}
+.dnode.new{ animation:nodeIn .6s cubic-bezier(.34,1.4,.64,1); }
+@keyframes nodeIn{ from{ opacity:0; transform:translateY(-14px) scale(.9); } to{ opacity:1; transform:none; } }
+.dnode__accent{ height:4px; background:var(--accent); }
+.dnode__body{ padding:7px 9px 8px; text-align:center; }
+.dnode__ico{ width:26px; height:26px; margin:0 auto 1px; color:var(--accent); }
+.dnode__name{ font-family:var(--font-display); font-size:13.5px; line-height:1.2; }
+.dnode__turn{ font-family:var(--font-mono); font-size:9px; color:var(--ink-dim); margin-top:3px; letter-spacing:.05em; }
+.dnode__log{ font-size:8.5px; color:var(--ink-dim); margin-top:4px; line-height:1.4; }
+.dnode__log b{ color:var(--dur-low); font-weight:700; }
+.dnode__seam{ display:block; width:100%; height:7px; }
+.dnode__seam path{ stroke:var(--line-metal); stroke-width:1.2; fill:none; }
+
+/* 토큰 — 나가 있는 무기 */
+.token{
+  position:absolute; width:40px; margin-left:-20px; z-index:8;
+  transition:top .42s cubic-bezier(.34,1.25,.64,1), left .42s cubic-bezier(.34,1.25,.64,1), opacity .32s;
+  text-align:center; pointer-events:none;
+}
+.token__glyph{
+  width:30px; height:30px; margin:0 auto; color:var(--accent);
+  background:rgba(22,18,16,.9); border:1px solid var(--line-metal); border-radius:4px;
+  display:flex; align-items:center; justify-content:center;
+  box-shadow:0 3px 9px rgba(0,0,0,.6);
+}
+.token__glyph svg{ width:21px; height:21px; }
+.token__step{ font-family:var(--font-mono); font-size:7.5px; color:var(--ink-dim); margin-top:2px; letter-spacing:.04em; }
+.token.jump .token__glyph{ animation:tokenJump .32s cubic-bezier(.34,1.5,.64,1); }
+@keyframes tokenJump{ 0%{ transform:translateY(0);} 40%{ transform:translateY(-7px) scale(1.06);} 100%{ transform:translateY(0);} }
+.token.gone{ opacity:0; }
+
+/* 던전 안으로 들어간다 — 잠시 머무는 동안 토큰이 어둠에 잠긴다 */
+.token.inside{ z-index:4; }
+.token.inside .token__glyph{
+  transition:transform .5s cubic-bezier(.4,.15,.2,1), opacity .5s, background .5s;
+  transform:scale(.72); opacity:.45; background:rgba(10,8,7,.95);
+}
+.token.inside .token__step{ opacity:0; transition:opacity .3s; }
+
+/* 던전이 삼킨다 */
+@keyframes nodeSwallow{
+  0%,100%{ box-shadow:0 6px 16px rgba(0,0,0,.5); }
+  35%{ box-shadow:0 6px 16px rgba(0,0,0,.5), 0 0 22px 3px var(--accent); }
+}
+.dnode.swallow{ animation:nodeSwallow 1.1s ease-in-out; }
+
+/* 지도 위를 날아오는 결과 봉투 — 야간 개봉 봉투(.env)와 완전히 분리한다 */
+.return-env{
+  position:absolute; width:52px; height:36px; z-index:22;
+  pointer-events:none; filter:drop-shadow(0 8px 12px rgba(0,0,0,.72));
+  transform:translate(-50%,-50%);
+}
+.return-env__body{
+  position:absolute; inset:0; overflow:hidden;
+  background:linear-gradient(155deg,#3b3127 0%,#28211b 100%);
+  border:1px solid var(--line-metal); border-radius:3px;
+}
+.return-env__flap{
+  position:absolute; inset:0 0 auto; height:21px;
+  background:#342a22; border-bottom:1px solid rgba(117,91,64,.72);
+  clip-path:polygon(0 0,100% 0,50% 100%);
+}
+.return-env__accent{ position:absolute; left:0; right:0; bottom:0; height:3px; background:var(--accent); }
+.return-env__seal{
+  position:absolute; left:50%; top:16px; transform:translate(-50%,-50%);
+  width:12px; height:12px; border-radius:50%; z-index:2;
+  background:var(--stamp-ink); box-shadow:0 0 0 1px rgba(0,0,0,.5) inset;
+}
+.return-env__shine{
+  position:absolute; inset:-12px; z-index:-1; opacity:.7;
+  background:radial-gradient(circle, color-mix(in srgb,var(--accent) 38%,transparent) 0%,transparent 68%);
+}
+
+.return-status{
+  position:absolute; left:50%; bottom:18px; z-index:21;
+  transform:translate(-50%,12px); opacity:0; pointer-events:none;
+  display:flex; flex-direction:column; align-items:center; gap:7px;
+  transition:opacity .28s, transform .36s cubic-bezier(.34,1.35,.64,1);
+}
+.return-status.on{ opacity:1; transform:translate(-50%,0); }
+.return-status__stack{ position:relative; width:72px; height:42px; }
+.return-status__paper{
+  position:absolute; left:50%; top:50%; width:54px; height:34px;
+  border:1px solid var(--line-metal); border-radius:3px;
+  background:linear-gradient(155deg,#3b3127,#28211b);
+  box-shadow:0 5px 12px rgba(0,0,0,.55);
+  transform:translate(-50%,-50%) rotate(var(--r,0deg)) translateY(var(--y,0px));
+  animation:returnPaperIn .34s cubic-bezier(.34,1.55,.64,1);
+}
+.return-status__paper::after{
+  content:''; position:absolute; left:50%; top:8px; width:10px; height:10px;
+  transform:translateX(-50%); border-radius:50%; background:var(--stamp-ink);
+}
+.return-status__label{
+  min-width:150px; padding:6px 10px; text-align:center;
+  font-family:var(--font-mono); font-size:9px; letter-spacing:.08em; color:var(--ink-dim);
+  border:1px solid var(--line-metal); border-radius:3px; background:rgba(18,15,13,.92);
+}
+.return-status.complete .return-status__stack{ animation:returnStackPulse .62s cubic-bezier(.34,1.55,.64,1); }
+.return-status.complete .return-status__label{ color:var(--ink); border-color:var(--grade-unique); }
+@keyframes returnPaperIn{
+  from{ opacity:0; transform:translate(-50%,-50%) translateY(-16px) rotate(-8deg) scale(.8); }
+}
+@keyframes returnStackPulse{
+  0%,100%{ transform:scale(1); } 45%{ transform:scale(1.14) translateY(-4px); }
+}
+/* 상점 */
+.shop{
+  position:absolute; left:0; right:0; height:64px; z-index:7;
+  display:flex; flex-direction:column; align-items:center; justify-content:flex-start;
+}
+.shop__house{ width:96px; height:46px; color:var(--ink-dim); position:relative; }
+.shop__house svg{ width:96px; height:46px; }
+.shop__win{
+  position:absolute; left:50%; top:26px; transform:translateX(-50%);
+  width:13px; height:11px; background:var(--grade-high); border-radius:1px;
+  box-shadow:0 0 12px 3px rgba(201,150,63,.42);
+  animation:forgeGlow 3.6s ease-in-out infinite;
+}
+@keyframes forgeGlow{ 0%,100%{ opacity:.72; } 45%{ opacity:1; } }
+.shop__label{
+  font-family:var(--font-mono); font-size:9.5px; letter-spacing:.2em;
+  color:var(--ink-dim); margin-top:2px;
+}
+
+/* ══ [§css.greet] 접객 — 낮 ══ */
+.greet{
+  position:absolute; inset:0; z-index:26; display:flex; flex-direction:column;
+  background:radial-gradient(ellipse at 50% -10%, #261e16 0%, var(--bg-void) 62%);
+  opacity:0; pointer-events:none; transition:opacity .32s;
+}
+.greet.on{ opacity:1; pointer-events:auto; }
+.greet__top{ padding:11px 14px 0; display:flex; align-items:center; justify-content:space-between; }
+.greet__day{ font-family:var(--font-mono); font-size:10px; letter-spacing:.16em; color:var(--ink-dim); }
+.queue{ display:flex; gap:6px; }
+.queue span{ width:7px; height:7px; border-radius:50%; background:rgba(233,221,198,.14); }
+.queue span.on{ background:var(--grade-unique); }
+.queue span.done{ background:var(--line-metal); }
+
+/* ══ 영업 종료 — 모든 무기를 빌려준 뒤 지도 버튼을 누르는 전환 화면 ══ */
+.closing{
+  position:absolute; inset:0; z-index:29; overflow:hidden;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  padding:28px; text-align:center;
+  background:radial-gradient(ellipse at 50% 35%,#261f18 0%,#0d0a08 70%);
+  opacity:0; pointer-events:none; transition:opacity .36s;
+}
+.closing.on{ opacity:1; pointer-events:auto; }
+.closing__door{
+  position:relative; width:126px; height:148px; margin-bottom:24px;
+  border:1px solid var(--line-metal); border-radius:5px 5px 2px 2px;
+  background:#18130f; box-shadow:0 18px 38px rgba(0,0,0,.64),0 0 26px rgba(201,150,63,.08);
+  overflow:hidden;
+}
+.closing__door::before,.closing__door::after{
+  content:''; position:absolute; top:0; bottom:0; width:50%;
+  background:linear-gradient(90deg,#2f261e,#211a15);
+  border:1px solid rgba(117,91,64,.55);
+  transition:transform .66s cubic-bezier(.45,.05,.25,1);
+}
+.closing__door::before{ left:0; transform-origin:left; }
+.closing__door::after{ right:0; transform-origin:right; }
+.closing__door-glow{
+  position:absolute; left:50%; top:50%; width:2px; height:86%; transform:translate(-50%,-50%);
+  background:var(--grade-unique); box-shadow:0 0 15px 3px rgba(201,150,63,.26);
+  animation:closingGlow 2.2s ease-in-out infinite;
+}
+@keyframes closingGlow{ 0%,100%{ opacity:.35; } 50%{ opacity:.9; } }
+.closing__k{ font-family:var(--font-mono); font-size:9px; letter-spacing:.22em; color:var(--grade-unique); }
+.closing__title{ margin-top:9px; font-family:var(--font-display); font-size:24px; color:var(--ink); }
+.closing__desc{ max-width:260px; margin-top:10px; font-size:12px; line-height:1.65; color:var(--ink-dim); }
+.closing__count{
+  display:flex; align-items:center; gap:7px; margin-top:15px;
+  font-family:var(--font-mono); font-size:10px; color:var(--ink-dim);
+}
+.closing__count b{ color:var(--ink); font-size:13px; }
+.closing__btn{
+  width:min(270px,100%); margin-top:24px; padding:13px 16px;
+  border:1px solid var(--grade-unique); border-radius:4px;
+  background:rgba(201,150,63,.08); color:var(--ink); cursor:pointer;
+  font-family:var(--font-body); font-size:13px; font-weight:700;
+  transition:transform .18s,background .18s;
+}
+.closing__btn:active{ transform:scale(.98); background:rgba(201,150,63,.16); }
+.closing__btn:disabled{ opacity:.5; pointer-events:none; }
+.closing.leaving .closing__door::before{ transform:translateX(-102%); }
+.closing.leaving .closing__door::after{ transform:translateX(102%); }
+
+/* ── 용사 카드 ── */
+.hero-zone{ flex-shrink:0; padding:4px 16px 0; display:flex; flex-direction:column; align-items:center; position:relative; z-index:1; }
+.hero-card{
+  width:154px; height:140px; cursor:grab; touch-action:pan-y;
+  transition:transform .3s cubic-bezier(.34,1.4,.64,1), opacity .3s;
+  will-change:transform; position:relative; animation:heroIn .4s ease-out;
+}
+.hero-card.dragging{ transition:none; cursor:grabbing; }
+@keyframes heroIn{ from{ transform:translateY(16px); opacity:0; } to{ transform:none; opacity:1; } }
+.hero-card__face{
+  width:100%; height:100%; background:var(--bg-card);
+  border:1px solid var(--line-metal); border-radius:5px; overflow:hidden;
+  box-shadow:0 6px 16px rgba(0,0,0,.45); display:flex; flex-direction:column;
+}
+.hero-card__accent{ height:4px; background:var(--h-accent,#888); flex-shrink:0; }
+.hero-card__inner{ padding:5px 12px 8px; text-align:center; flex:1; display:flex; flex-direction:column; justify-content:center; }
+.hero-ico{ width:36px; height:36px; margin:0 auto; color:var(--h-accent,#888); }
+.hero-name{ font-family:var(--font-display); font-size:15px; margin-top:2px; }
+.hero-chip{ font-size:10px; color:var(--ink-dim); margin-top:2px; }
+.hero-skill{ font-family:var(--font-mono); font-weight:700; font-size:12px; color:var(--ink); margin-top:5px; }
+.hero-card.talking{ animation:talk .5s ease-in-out; }
+@keyframes talk{ 0%,100%{ transform:rotate(0) translateY(0);} 30%{ transform:rotate(-2deg) translateY(-4px);} 65%{ transform:rotate(1.5deg) translateY(-1px);} }
+.hero-card__send{
+  position:absolute; top:50%; left:50%; transform:translate(-50%,-50%) rotate(-4deg);
+  font-family:var(--font-display); font-size:17px; color:var(--ink);
+  border:2px solid var(--dur-low); background:rgba(22,18,16,.86);
+  padding:5px 13px; border-radius:4px; opacity:0; pointer-events:none; z-index:5; white-space:nowrap;
+}
+.hero-drag-hint{ font-size:9.5px; color:var(--ink-dim); margin-top:4px; letter-spacing:.02em; }
+
+/* ── 말풍선 ── */
+.bubble{
+  position:relative; margin:7px 10px 0;
+  background:var(--bg-card); border:1px solid var(--line-metal); border-radius:5px;
+  padding:8px 14px; font-size:12px; line-height:1.5; color:var(--ink);
+  cursor:pointer; min-height:44px;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;
+  animation:bubbleIn .3s ease-out;
+}
+@keyframes bubbleIn{ from{ opacity:0; transform:translateY(-5px);} to{ opacity:1; transform:none;} }
+.bubble::before{
+  content:''; position:absolute; top:-9px; left:50%; margin-left:-7px;
+  border-left:7px solid transparent; border-right:7px solid transparent; border-bottom:8px solid var(--line-metal);
+}
+.bubble__hint{ position:absolute; right:9px; bottom:5px; font-family:var(--font-mono); font-size:9px; color:var(--ink-dim); letter-spacing:.08em; }
+.bubble__tail{ display:block; color:var(--ink-dim); font-size:11px; margin-top:5px; }
+
+/* ── 무기 카드 ── */
+.deck-zone{ flex:1; position:relative; display:flex; align-items:center; justify-content:center; margin-top:5px; min-height:186px; z-index:10; }
+.rail{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; }
+.wcard{
+  position:absolute; width:152px; height:220px; cursor:grab; touch-action:pan-y;
+  transition:transform .32s cubic-bezier(.34,1.4,.64,1), opacity .3s;
+  will-change:transform;
+}
+.wcard.dragging{ transition:none; cursor:grabbing; }
+.wcard--side{ pointer-events:none; opacity:.4; filter:brightness(.62) saturate(.7); z-index:0; }
+.wcard--side.prev{ transform:translateX(calc(-1 * var(--side, 142px))) scale(.84) rotate(-4deg); }
+.wcard--side.next{ transform:translateX(var(--side, 142px)) scale(.84) rotate( 4deg); }
+.wcard--center{ z-index:2; }
+.wcard__face{
+  width:100%; height:100%; background:var(--bg-card);
+  border:1px solid var(--line-metal); border-radius:5px; overflow:hidden;
+  box-shadow:0 6px 18px rgba(0,0,0,.5); display:flex; flex-direction:column;
+}
+.wcard__accent{ height:5px; background:var(--accent,#888); flex-shrink:0; }
+.wcard--unique .wcard__accent{ animation:ember 2.6s ease-in-out infinite; }
+@keyframes ember{ 0%,100%{ filter:brightness(1);} 50%{ filter:brightness(1.55);} }
+.wcard__thumb{ flex:1; position:relative; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+.wcard__thumb::before{
+  content:''; position:absolute; width:150%; aspect-ratio:1; border-radius:50%;
+  background:var(--accent,#888); opacity:.13; filter:blur(1px);
+}
+.wcard__thumb svg{ width:66px; height:66px; color:var(--accent,#888); position:relative; z-index:1; filter:drop-shadow(0 4px 10px rgba(0,0,0,.4)); }
+.crack{ display:block; width:100%; height:10px; flex-shrink:0; }
+.crack path{ stroke:var(--line-metal); stroke-width:1.4; fill:none; }
+.wcard__info{ padding:6px 12px 9px; text-align:center; flex-shrink:0; }
+.wcard__grade{ font-size:10.5px; color:var(--ink-dim); }
+.wcard__name{ font-family:var(--font-display); font-size:15px; margin-top:1px; }
+.wcard__atk{ font-family:var(--font-mono); font-weight:700; font-size:16px; margin-top:2px; }
+.gauge{ height:5px; border-radius:3px; background:rgba(255,255,255,.06); overflow:hidden; margin-top:5px; }
+.gauge__fill{ height:100%; border-radius:3px; }
+.wcard__brit{ font-family:var(--font-mono); font-size:9px; color:var(--ink-dim); margin-top:4px; }
+.wcard__brit b{ color:var(--dur-low); font-weight:700; }
+.flip-hint{
+  position:absolute; right:9px; bottom:7px; z-index:3;
+  font-family:var(--font-mono); font-size:8px; letter-spacing:.1em; color:var(--ink-dim); opacity:.6;
+}
+.stampMark{
+  position:absolute; top:50%; left:50%; transform:translate(-50%,-50%) rotate(-11deg);
+  font-family:var(--font-display); font-size:22px; color:var(--ink);
+  background:rgba(22,18,16,.86); padding:6px 16px; border-radius:4px;
+  opacity:0; pointer-events:none; z-index:4;
+}
+.stampMark.give{ border:2px solid var(--dur-high); }
+.counter{ text-align:center; font-family:var(--font-mono); font-size:9.5px; letter-spacing:.12em; color:var(--ink-dim); padding:2px 0 0; }
+.greet__hint{ flex-shrink:0; text-align:center; padding:3px 14px 9px; font-size:10px; color:var(--ink-dim); line-height:1.6; }
+.greet__hint b{ color:var(--ink); font-weight:700; }
+.greet__empty{
+  flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:12px; color:var(--ink-dim); font-size:12px; padding:0 30px; text-align:center;
+}
+
+/* ── 대여 카드 (용사+무기 합본) ── */
+.loan-card{
+  width:186px; background:var(--bg-card); border:1px solid var(--line-metal);
+  border-radius:5px; overflow:hidden; box-shadow:0 10px 26px rgba(0,0,0,.55);
+  flex:0 0 186px;
+}
+.loan-card--big{ width:212px; flex-basis:212px; }
+.loan-said{
+  min-height:39px; padding:9px 12px 8px;
+  border-bottom:1px dashed var(--line-metal); background:rgba(0,0,0,.2);
+  font-size:11px; line-height:1.5; color:var(--ink);
+  display:flex; align-items:center;
+}
+.loan-half{ display:flex; align-items:center; gap:11px; padding:13px 12px; }
+.loan-half__ico{ width:42px; height:42px; flex-shrink:0; }
+.loan-half__txt{ min-width:0; flex:1; }
+.loan-half__name{ font-family:var(--font-display); font-size:15px; line-height:1.2; }
+.loan-half__sub{ font-size:10px; color:var(--ink-dim); margin-top:2px; }
+.loan-half__num{ font-family:var(--font-mono); font-weight:700; font-size:15px; color:var(--ink); }
+.loan-card--big .loan-half{ padding:17px 14px; }
+.loan-card--big .loan-half__ico{ width:54px; height:54px; }
+.loan-card--big .loan-half__name{ font-size:19px; }
+.loan-card--big .loan-half__num{ font-size:19px; }
+.loan-seam{ display:block; width:100%; height:10px; }
+.loan-seam path{ stroke:var(--line-metal); stroke-width:1.4; fill:none; }
+.loan-card__foot{
+  font-size:9.5px; color:var(--ink-dim); text-align:center;
+  padding:8px 10px 11px; border-top:1px dashed var(--line-metal);
+}
+.loan-card__foot--split{
+  min-height:43px; display:flex; align-items:center; justify-content:space-between;
+  gap:8px; text-align:left;
+}
+.loan-card__place{ font-family:var(--font-display); font-size:12.5px; line-height:1.25; }
+.loan-card__wait{ font-family:var(--font-mono); font-size:8.5px; letter-spacing:.02em; text-align:right; }
+.loan-card--map{ scroll-snap-align:start; transition:border-color .15s, transform .15s; }
+.loan-card--map[data-tok]{ cursor:pointer; }
+.loan-card--map[data-tok]:active{ transform:scale(.985); }
+.loan-card--map[data-tok]:hover{ border-color:var(--grade-unique); }
+.loan-card--big .loan-card__foot{ font-size:11px; padding:9px 10px 12px; }
+
+/* ── 합체 리빌 ── */
+.merge-overlay{
+  position:absolute; inset:0; z-index:28; background:rgba(10,8,7,0);
+  display:flex; align-items:center; justify-content:center;
+  opacity:0; pointer-events:none; transition:opacity .28s ease, background .28s ease;
+}
+.merge-overlay.show{ opacity:1; background:rgba(10,8,7,.66); }
+.merge-card-wrap{
+  transform:scale(.8); opacity:0;
+  transition:transform .38s cubic-bezier(.34,1.5,.64,1), opacity .3s;
+}
+.merge-overlay.show .merge-card-wrap{ transform:scale(1); opacity:1; }
+.merge-bubble{
+  position:absolute; left:0; top:0;
+  background:var(--bg-card); border:1px solid var(--line-metal); border-radius:5px;
+  padding:10px 16px; font-size:13px; line-height:1.5; color:var(--ink);
+  max-width:250px; width:max-content; text-align:center;
+  box-shadow:0 8px 20px rgba(0,0,0,.5);
+  transform:translate(-50%, 14px) scale(.9); opacity:0;
+  transition:transform .32s cubic-bezier(.34,1.4,.64,1), opacity .28s;
+}
+.merge-bubble.show{ transform:translate(-50%, 14px) scale(1); opacity:1; }
+.merge-bubble::after{
+  content:''; position:absolute; top:-9px; left:50%; margin-left:-8px;
+  border-left:8px solid transparent; border-right:8px solid transparent; border-bottom:9px solid var(--line-metal);
+}
+.merge-bubble__mood{ display:block; font-family:var(--font-mono); font-size:9px; letter-spacing:.12em; margin-bottom:4px; }
+.merge-bubble.good .merge-bubble__mood{ color:var(--dur-high); }
+.merge-bubble.mid  .merge-bubble__mood{ color:var(--dur-mid); }
+.merge-bubble.bad  .merge-bubble__mood{ color:var(--dur-low); }
+
+/* ── 말 되짚기 오버레이 ── */
+.talk{
+  position:absolute; inset:0; z-index:30; background:rgba(10,8,7,.9);
+  display:flex; align-items:center; justify-content:center; padding:30px;
+  opacity:0; pointer-events:none; transition:opacity .24s;
+}
+.talk.show{ opacity:1; pointer-events:auto; }
+.talk__box{
+  background:var(--bg-card); border:1px solid var(--line-metal); border-radius:6px;
+  padding:18px 20px; max-width:280px; box-shadow:0 16px 40px rgba(0,0,0,.66);
+}
+.talk__who{ font-family:var(--font-mono); font-size:9px; letter-spacing:.16em; color:var(--ink-dim); }
+.talk__line{ font-size:14px; line-height:1.65; margin-top:9px; }
+.talk__more{ font-size:12px; line-height:1.7; color:var(--ink-dim); margin-top:10px; }
+.talk__close{ text-align:center; font-family:var(--font-mono); font-size:9.5px; color:var(--ink-dim); margin-top:15px; }
+
+/* ══ [§css.peek] 지도 보기 · 던전 카드 뒷면 ══ */
+.greet.peek{ opacity:0; pointer-events:none; }
+
+
+/* 지도 버튼 — 구석에 조용히 */
+.greet__topr{ display:flex; align-items:center; gap:9px; }
+.mapbtn{
+  display:flex; align-items:center; gap:5px; cursor:pointer;
+  background:transparent; border:1px solid var(--line-metal); border-radius:4px;
+  padding:5px 8px; color:var(--ink-dim); transition:border-color .15s, color .15s;
+}
+.mapbtn:hover{ border-color:var(--grade-unique); color:var(--ink); }
+.mapbtn.on{ color:var(--ink); }
+.mapbtn__ico{ width:13px; height:13px; display:block; }
+.mapbtn__ico svg{ width:100%; height:100%; }
+.mapbtn__t{ font-family:var(--font-mono); font-size:9.5px; letter-spacing:.04em; }
+
+/* 키워드 · 재료 */
+.key{
+  font-size:10px; padding:2.5px 7px; border-radius:3px;
+  background:rgba(233,221,198,.09); border:1px solid var(--line-metal); color:var(--ink);
+}
+.key--q{ color:#4e4438; border-style:dashed; min-width:24px; text-align:center; }
+.loot{ font-family:var(--font-mono); font-size:9.5px; color:var(--grade-high); }
+.loot::before{ content:'◆ '; opacity:.6; }
+.loot--q{ color:#4e4438; }
+
+/* 던전 카드 뒷면 — 누런 장부. 부고와 다른 종이다. */
+.dback{ background:#c8b895; color:#33281d; padding:9px 11px 10px;
+  background-image:repeating-linear-gradient(0deg, rgba(90,70,52,.09) 0 1px, transparent 1px 19px); }
+.dback__head{ display:flex; align-items:baseline; justify-content:space-between;
+  border-bottom:1px solid rgba(90,70,52,.4); padding-bottom:5px; }
+.dback__name{ font-family:var(--font-display); font-size:14px; }
+.dback__k{ font-family:var(--font-mono); font-size:7.5px; letter-spacing:.24em; color:#7a6048; }
+.dback__keys{ display:flex; flex-wrap:wrap; gap:4px; margin-top:8px; }
+.dback__keys .key{ background:rgba(90,70,52,.13); border-color:rgba(90,70,52,.4); color:#33281d; font-size:9.5px; }
+.dback__keys .key--q{ color:#9a8368; }
+.dback__loot{ display:flex; gap:6px; margin-top:6px; }
+.dback__loot .loot{ color:#7a5a20; font-size:9px; }
+.dback__loot .loot--q{ color:#9a8368; }
+.dback__list{ max-height:132px; overflow-y:auto; margin-top:7px;
+  border-top:1px dashed rgba(90,70,52,.35); }
+.dback__list::-webkit-scrollbar{ display:none; }
+.dback__row{ padding:6px 0; border-bottom:1px dashed rgba(90,70,52,.28); }
+.dback__meta{ font-family:var(--font-mono); font-size:8px; color:#7a6048; letter-spacing:.05em; }
+.dback__quote{ font-size:11px; line-height:1.5; margin-top:2px; }
+.dback__empty{ font-size:10.5px; color:#7a6048; padding:14px 0; text-align:center; }
+.dback__sum{ font-size:9.5px; color:#5c4636; margin-top:7px; }
+
+/* ══ [§css.ldrawer] 지도 위의 대여 서랍 ══
+   지도와 같은 화면에 있어야 한다.
+   저 길 위 어디쯤에 내 것이 있는지 보면서 목록을 읽는다. */
+.ldrawer{
+  position:absolute; left:0; right:0; bottom:0; z-index:27;
+  background:linear-gradient(180deg, rgba(29,23,18,.97) 0%, rgba(23,19,16,.99) 100%);
+  border-top:1px solid var(--line-metal);
+  box-shadow:0 -10px 26px rgba(0,0,0,.55);
+  max-height:38px; overflow:hidden;
+  transition:max-height .4s cubic-bezier(.4,.15,.2,1), opacity .26s;
+  opacity:0; pointer-events:none;
+}
+.ldrawer.on{ opacity:1; pointer-events:auto; }
+.ldrawer.open{ max-height:60%; }
+.ldrawer__grip{
+  display:flex; align-items:center; gap:8px; padding:11px 14px 10px; cursor:pointer;
+}
+.ldrawer__title{ font-family:var(--font-mono); font-size:9.5px; letter-spacing:.2em; color:var(--ink-dim); }
+.ldrawer__count{ flex:1; font-family:var(--font-mono); font-size:9.5px; color:var(--ink); }
+.ldrawer__chev{ font-size:10px; color:var(--ink-dim); transition:transform .35s; }
+.ldrawer.open .ldrawer__chev{ transform:rotate(180deg); }
+.ldrawer__body{ padding:0 0 14px; overflow:hidden; }
+.ldrawer__body::-webkit-scrollbar{ display:none; }
+
+/* 서랍 안의 대여 카드 — 접객에서 생성되는 카드와 같은 형태 */
+.loans__group{ overflow:hidden; }
+.loans__k{
+  font-family:var(--font-mono); font-size:9px; letter-spacing:.16em; color:var(--ink-dim);
+  margin:10px 12px 7px; padding-bottom:5px; border-bottom:1px solid var(--line-metal);
+}
+.loans__none{ text-align:center; color:var(--ink-dim); font-size:12px; padding:34px 20px; line-height:1.7; }
+.loans__rail{
+  display:flex; gap:10px; overflow-x:auto; overflow-y:hidden;
+  padding:0 12px 12px; scroll-padding-inline:12px;
+  scroll-snap-type:x proximity; touch-action:pan-x; overscroll-behavior-x:contain;
+  -webkit-overflow-scrolling:touch;
+}
+.loans__rail::after{ content:''; flex:0 0 2px; }
+.loans__rail::-webkit-scrollbar{ display:none; }
+
+/* ══ [§css.page] 상점 · 개봉 — 각각 한 화면 ══
+   서랍이 아니라 페이지다. 지도를 가리지 않고, 지도를 대신한다. */
+.page{
+  position:absolute; inset:0; z-index:25; display:flex; flex-direction:column;
+  background:radial-gradient(ellipse at 50% -8%, #241c15 0%, var(--bg-void) 58%);
+  opacity:0; pointer-events:none; transition:opacity .3s;
+}
+.page.on{ opacity:1; pointer-events:auto; }
+.page__top{
+  flex-shrink:0; display:flex; align-items:center; gap:9px; padding:16px 16px 0;
+}
+.page__top .page__phase{ flex:1; }
+.page__day{ font-family:var(--font-mono); font-size:10px; letter-spacing:.18em; color:var(--ink-dim); }
+.page__phase{ font-family:var(--font-display); font-size:22px; color:var(--ink); }
+.page__sub{
+  flex-shrink:0; padding:4px 16px 0; font-size:11px; color:var(--ink-dim); line-height:1.6;
+}
+.page__sub b{ color:var(--ink); font-weight:700; }
+.page__body{ flex:1; overflow-y:auto; padding:14px 14px 6px; }
+.page__body::-webkit-scrollbar{ display:none; }
+.page__acts{ flex-shrink:0; padding:8px 14px 16px; display:flex; gap:9px; }
+.page-back{
+  width:100%; padding:11px 14px; border:1px solid var(--line-metal); border-radius:5px;
+  background:var(--bg-card); color:var(--ink); font-family:var(--font-display); font-size:13px;
+  cursor:pointer; transition:border-color .15s, background .15s;
+}
+.page-back:hover{ border-color:var(--grade-unique); background:#2c2219; }
+.page__k{
+  font-family:var(--font-mono); font-size:9px; letter-spacing:.18em; color:var(--ink-dim);
+  margin:2px 0 8px; padding-bottom:5px; border-bottom:1px solid var(--line-metal);
+}
+
+/* ── 무기고 — 카드로 늘어놓는다 ──
+   접객에서 건네는 것과 같은 물건이니 같은 얼굴이어야 한다. */
+.armory{ margin:2px -14px 0; padding:0 14px; }
+.armory__rail{
+  display:flex; gap:9px; overflow-x:auto; padding:2px 0 4px;
+  scroll-snap-type:x proximity;
+}
+.armory__rail::-webkit-scrollbar{ display:none; }
+
+.gcard{
+  flex:0 0 auto; width:112px; scroll-snap-align:start; cursor:pointer;
+  background:var(--bg-card); border:1px solid var(--line-metal); border-radius:5px;
+  overflow:hidden; box-shadow:0 5px 14px rgba(0,0,0,.45);
+  transition:transform .16s, border-color .16s;
+}
+.gcard:hover{ border-color:var(--accent); transform:translateY(-2px); }
+.gcard:active{ transform:translateY(0); }
+.gcard__accent{ height:4px; background:var(--accent); }
+.gcard--unique .gcard__accent{ animation:ember 2.6s ease-in-out infinite; }
+.gcard__thumb{
+  position:relative; height:74px; display:flex; align-items:center; justify-content:center;
+  overflow:hidden;
+}
+.gcard__thumb::before{
+  content:''; position:absolute; width:104px; height:104px; border-radius:50%;
+  background:var(--accent); opacity:.13; filter:blur(1px);
+}
+.gcard__thumb svg{
+  width:52px; height:52px; color:var(--accent); position:relative; z-index:1;
+  filter:drop-shadow(0 3px 8px rgba(0,0,0,.5));
+}
+.gcard__info{ padding:7px 9px 10px; text-align:center; }
+.gcard__grade{ font-size:8.5px; color:var(--ink-dim); }
+.gcard__name{ font-family:var(--font-display); font-size:12.5px; line-height:1.25; margin-top:1px; }
+.gcard__atk{ font-family:var(--font-mono); font-weight:700; font-size:14px; color:var(--accent); margin-top:2px; }
+.gcard__bar{ height:4px; border-radius:2px; background:rgba(255,255,255,.07); overflow:hidden; margin-top:6px; }
+.gcard__bar i{ display:block; height:100%; border-radius:2px; }
+.gcard__brit{ font-family:var(--font-mono); font-size:8.5px; color:var(--ink-dim); margin-top:5px; }
+.gcard__brit b{ color:var(--dur-low); font-weight:700; }
+.gcard__repair{
+  width:calc(100% - 14px); margin:0 7px 8px; padding:7px 5px;
+  border:1px solid var(--line-metal); border-radius:4px; background:rgba(0,0,0,.22);
+  color:var(--ink); font-family:var(--font-mono); font-size:9px; cursor:pointer;
+}
+.gcard__repair:not(:disabled):hover{ border-color:var(--dur-high); }
+.gcard__repair:disabled{ opacity:.38; cursor:default; }
+
+.armory__empty{
+  text-align:center; color:var(--ink-dim); font-size:11.5px; line-height:1.8;
+  padding:22px 10px 16px; border:1px dashed var(--line-metal); border-radius:5px;
+}
+
+/* ── 재료 — 종류마다 다르게 쌓인다 ── */
+.mats{ margin-top:4px; }
+.mats__rail{ display:flex; gap:7px; overflow-x:auto; padding-bottom:2px; }
+.mats__rail::-webkit-scrollbar{ display:none; }
+.mat{
+  flex:0 0 auto; display:flex; align-items:center; gap:6px;
+  padding:7px 10px 7px 8px; border-radius:4px;
+  border:1px solid var(--line-metal); background:rgba(0,0,0,.2);
+}
+.mat__gem{
+  width:12px; height:12px; background:var(--mc); flex-shrink:0;
+  box-shadow:0 0 7px var(--mc);
+}
+/* 등급이 높을수록 모양이 복잡해진다 */
+.mat__gem.tier1{ clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%); }
+.mat__gem.tier2{ clip-path:polygon(50% 0,93% 25%,93% 75%,50% 100%,7% 75%,7% 25%); }
+.mat__gem.tier3{ clip-path:polygon(50% 0,100% 38%,81% 100%,19% 100%,0 38%); }
+.mat__n{ font-size:11px; color:var(--ink); white-space:nowrap; }
+.mat__c{ font-family:var(--font-mono); font-weight:700; font-size:12px; color:var(--mc); }
+.mats__none{ font-size:11.5px; color:var(--ink-dim); padding:10px 2px; }
+.mats__note{ font-family:var(--font-mono); font-size:9.5px; color:var(--ink-dim); margin-top:9px; letter-spacing:.04em; }
+.mats__note b{ color:var(--ink); font-weight:700; }
+
+/* ── 상점의 세 공간 — 무기고, 제작소, 문열기 ── */
+.shop-hub__intro{
+  margin:2px 0 15px; padding:13px 14px; border-left:2px solid var(--grade-unique);
+  background:rgba(201,150,63,.05); color:var(--ink-dim); font-size:11px; line-height:1.65;
+}
+.doors{ margin-top:24px; display:flex; flex-direction:column; gap:9px; }
+.doors--hub{ margin-top:0; }
+.door{
+  display:flex; align-items:center; gap:12px; padding:14px 14px;
+  background:var(--bg-card); border:1px solid var(--line-metal); border-radius:5px;
+  cursor:pointer; transition:border-color .16s, transform .16s, background .16s;
+}
+.door:hover{ border-color:var(--grade-unique); background:#2c2219; }
+.door:active{ transform:translateY(1px); }
+.door__ico{ width:26px; height:26px; color:var(--ink-dim); flex-shrink:0; }
+.door__ico svg{ width:100%; height:100%; }
+.door:hover .door__ico{ color:var(--grade-unique); }
+.door__txt{ flex:1; min-width:0; }
+.door__t{ font-family:var(--font-display); font-size:15px; }
+.door__s{ font-size:10.5px; color:var(--ink-dim); margin-top:2px; }
+.door__go{ font-size:19px; color:var(--ink-dim); flex-shrink:0; }
+.door--shut{ opacity:.42; pointer-events:none; }
+.workshop-create{
+  margin-top:18px; display:flex; align-items:center; gap:12px; width:100%; padding:14px;
+  border:1px solid var(--grade-unique); border-radius:5px; background:#302318; color:var(--ink);
+  cursor:pointer; text-align:left;
+}
+.workshop-create:disabled{ opacity:.38; border-color:var(--line-metal); cursor:default; }
+.workshop-create__ico{ width:28px; height:28px; color:var(--grade-unique); flex-shrink:0; }
+.workshop-create__ico svg{ width:100%; height:100%; }
+.workshop-create__title{ display:block; font-family:var(--font-display); font-size:15px; }
+.workshop-create__sub{ display:block; color:var(--ink-dim); font-size:10px; margin-top:2px; }
+
+/* ── 제작소 — 재료 세 가지를 고른 뒤 벼린다 ── */
+.forge-popup{
+  position:absolute; inset:0; z-index:36; padding:18px 14px;
+  display:flex; align-items:center; justify-content:center;
+  background:rgba(8,6,5,.82); backdrop-filter:blur(3px);
+  opacity:0; pointer-events:none; transition:opacity .22s;
+}
+.forge-popup.on{ opacity:1; pointer-events:auto; }
+.forge-popup__panel{
+  width:100%; max-height:calc(100% - 16px); overflow-y:auto;
+  background:linear-gradient(160deg,#2c231b,#1b1612);
+  border:1px solid var(--line-metal); border-radius:8px;
+  box-shadow:0 18px 50px rgba(0,0,0,.65);
+  transform:translateY(12px) scale(.985); transition:transform .24s cubic-bezier(.34,1.25,.64,1);
+}
+.forge-popup.on .forge-popup__panel{ transform:none; }
+.forge-popup__head{ display:flex; align-items:flex-start; gap:10px; padding:17px 16px 12px; }
+.forge-popup__ico{ width:28px; height:28px; color:var(--grade-unique); flex-shrink:0; }
+.forge-popup__ico svg{ width:100%; height:100%; }
+.forge-popup__title{ font-family:var(--font-display); font-size:18px; }
+.forge-popup__sub{ font-size:10.5px; color:var(--ink-dim); margin-top:3px; line-height:1.45; }
+.forge-popup__close{
+  margin-left:auto; width:30px; height:30px; border:0; border-radius:4px;
+  background:rgba(255,255,255,.04); color:var(--ink-dim); font-size:20px; cursor:pointer;
+}
+.forge-slots{ display:grid; grid-template-columns:repeat(3,1fr); gap:7px; padding:0 16px 14px; }
+.forge-slot{
+  min-width:0; height:65px; border:1px dashed var(--line-metal); border-radius:5px;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px;
+  color:var(--ink-dim); background:rgba(0,0,0,.16); cursor:default;
+}
+.forge-slot.filled{ border-style:solid; border-color:var(--mc); color:var(--ink); cursor:pointer; }
+.forge-slot__gem{ width:16px; height:16px; background:var(--mc); box-shadow:0 0 8px var(--mc); }
+.forge-slot__gem.tier1{ clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%); }
+.forge-slot__gem.tier2{ clip-path:polygon(50% 0,93% 25%,93% 75%,50% 100%,7% 75%,7% 25%); }
+.forge-slot__gem.tier3{ clip-path:polygon(50% 0,100% 38%,81% 100%,19% 100%,0 38%); }
+.forge-slot__name{ max-width:100%; padding:0 4px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:10px; }
+.forge-slot__num{ font-family:var(--font-mono); font-size:9px; }
+.forge-popup__k{ font-family:var(--font-mono); font-size:8.5px; letter-spacing:.14em; color:var(--ink-dim); padding:0 16px 7px; }
+.forge-materials{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; padding:0 16px 16px; }
+.forge-mat{
+  position:relative; display:flex; align-items:center; gap:8px; min-width:0;
+  padding:10px 9px; border:1px solid var(--line-metal); border-radius:5px;
+  background:rgba(0,0,0,.2); color:var(--ink); cursor:pointer;
+  transition:border-color .15s, background .15s, transform .15s;
+}
+.forge-mat:active{ transform:scale(.98); }
+.forge-mat.selected{ border-color:var(--mc); background:rgba(255,255,255,.035); }
+.forge-mat.exhausted{ opacity:.38; pointer-events:none; }
+.forge-mat__gem{ width:16px; height:16px; flex-shrink:0; background:var(--mc); box-shadow:0 0 8px var(--mc); }
+.forge-mat__gem.tier1{ clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%); }
+.forge-mat__gem.tier2{ clip-path:polygon(50% 0,93% 25%,93% 75%,50% 100%,7% 75%,7% 25%); }
+.forge-mat__gem.tier3{ clip-path:polygon(50% 0,100% 38%,81% 100%,19% 100%,0 38%); }
+.forge-mat__txt{ min-width:0; }
+.forge-mat__name{ display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; }
+.forge-mat__left{ display:block; font-family:var(--font-mono); font-size:8.5px; color:var(--ink-dim); margin-top:2px; }
+.forge-mat__picked{
+  margin-left:auto; min-width:20px; height:20px; border-radius:10px; padding:0 5px;
+  display:flex; align-items:center; justify-content:center;
+  background:var(--mc); color:#17120e; font-family:var(--font-mono); font-size:10px; font-weight:700;
+}
+.forge-popup__foot{ border-top:1px solid var(--line-metal); padding:12px 16px 16px; }
+.forge-start{
+  width:100%; padding:12px 14px; border:1px solid var(--grade-unique); border-radius:5px;
+  background:#3a2a1d; color:var(--ink); font-family:var(--font-display); font-size:15px; cursor:pointer;
+}
+.forge-start:disabled{ opacity:.35; border-color:var(--line-metal); cursor:default; }
+.forge-start__note{ text-align:center; font-size:9.5px; color:var(--ink-dim); margin-top:7px; }
+
+/* ══ [§css.night] 개봉 — open_night 원본 ══ */
+.reveal{
+  position:fixed; inset:0; width:100vw; height:100vh; height:100dvh; z-index:1000;
+  display:flex; flex-direction:column;
+  background:radial-gradient(ellipse at 50% 8%, #221c17 0%, rgba(10,8,7,.98) 62%);
+  opacity:0; pointer-events:none; transition:opacity .3s;
+}
+.reveal.on{ opacity:1; pointer-events:auto; }
+.night__top{ padding:calc(18px + env(safe-area-inset-top)) 16px 6px; flex-shrink:0; text-align:center; }
+.night__day{ font-family:var(--font-mono); font-size:11px; letter-spacing:.16em; color:var(--ink-dim); text-transform:uppercase; }
+.night__queue{ display:flex; justify-content:center; gap:6px; margin-top:9px; }
+.night__queue span{ width:7px; height:7px; border-radius:50%; background:rgba(233,221,198,.14); }
+.night__queue span.on{ background:var(--ink-dim); }
+.night__queue span.alive{ background:var(--dur-high); }
+.night__queue span.dead{ background:var(--dur-low); }
+.night__stage{ flex:1; position:relative; display:flex; align-items:center; justify-content:center; min-height:0; }
+.night__hints{ flex-shrink:0; padding:6px 16px calc(20px + env(safe-area-inset-bottom)); text-align:center; }
+.night__hint{
+  display:inline-block; font-family:var(--font-mono); font-size:9.5px; letter-spacing:.06em; color:var(--ink-dim);
+  background:var(--bg-card); border:1px solid var(--line-metal); border-radius:3px; padding:5px 10px;
+}
+.night__counter{ font-family:var(--font-mono); font-size:10px; color:var(--ink-dim); margin-top:9px; letter-spacing:.08em; }
+
+/* ── 봉투 ── */
+.env{
+  position:absolute; width:250px; height:168px;
+  cursor:pointer; user-select:none;
+  transition:transform .45s cubic-bezier(.34,1.4,.64,1), opacity .4s;
+}
+.env__body{
+  position:absolute; inset:0;
+  background:linear-gradient(160deg, #2f2820 0%, #241e18 100%);
+  border:1px solid var(--line-metal); border-radius:4px;
+  box-shadow:0 10px 26px rgba(0,0,0,.6);
+  overflow:hidden;
+}
+/* 겉면은 전부 같은 색 — 뜯기 전엔 알 수 없다 */
+.env__flap{
+  position:absolute; left:0; right:0; top:0; height:84px;
+  background:linear-gradient(175deg, #362d24 0%, #2a231c 100%);
+  border-bottom:1px solid var(--line-metal);
+  clip-path:polygon(0 0, 100% 0, 50% 100%);
+  transform-origin:50% 0%;
+  transition:transform .5s cubic-bezier(.5,.05,.4,1), filter .5s;
+  z-index:3;
+}
+.env.opened .env__flap{ transform:rotateX(-168deg); filter:brightness(.7); }
+.env__seal{
+  position:absolute; left:50%; top:56px; transform:translate(-50%,-50%) rotate(-6deg);
+  width:34px; height:34px; border-radius:50%;
+  border:1.6px solid var(--stamp-ink); color:var(--stamp-ink);
+  background:rgba(18,15,13,.6);
+  font-family:var(--font-display); font-size:12px;
+  display:flex; align-items:center; justify-content:center; z-index:4;
+  transition:opacity .3s;
+}
+.env.opened .env__seal{ opacity:0; }
+.env__label{ position:absolute; left:0; right:0; bottom:16px; text-align:center; z-index:2; }
+.env__dest{ font-family:var(--font-display); font-size:16px; color:var(--ink); }
+.env__who{ font-size:10.5px; color:var(--ink-dim); margin-top:3px; }
+.env__hint{
+  position:absolute; left:0; right:0; bottom:-22px; text-align:center;
+  font-family:var(--font-mono); font-size:9px; letter-spacing:.1em; color:var(--ink-dim);
+}
+/* 뜯는 순간 드러나는 안쪽 색 */
+.env__inner{
+  position:absolute; left:0; right:0; top:0; height:96px;
+  opacity:0; transition:opacity .35s ease .18s; z-index:1;
+}
+.env.opened .env__inner{ opacity:1; }
+.env__inner.alive{ background:linear-gradient(180deg, rgba(122,155,118,.42) 0%, transparent 100%); }
+.env__inner.dead{  background:linear-gradient(180deg, rgba(156,63,38,.5) 0%, transparent 100%); }
+.env.gone{ transform:translateY(-40px) scale(.9); opacity:0; }
+.env.enter{ animation:envIn .42s cubic-bezier(.34,1.4,.64,1); }
+@keyframes envIn{ from{ transform:translateY(26px) scale(.94); opacity:0; } to{ transform:none; opacity:1; } }
+.env.tearing{ animation:tear .22s ease-in-out; }
+@keyframes tear{ 0%,100%{ transform:translateX(0);} 30%{ transform:translateX(-4px) rotate(-.6deg);} 70%{ transform:translateX(3px) rotate(.5deg);} }
+
+/* ── 결과 카드 ── */
+.result{
+  position:fixed; inset:0; width:100vw; height:100vh; height:100dvh; z-index:1010;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px;
+  padding:calc(24px + env(safe-area-inset-top)) 24px calc(24px + env(safe-area-inset-bottom));
+  background:rgba(10,8,7,0);
+  opacity:0; pointer-events:none; transition:opacity .3s, background .3s;
+}
+.result.show{ opacity:1; pointer-events:auto; background:rgba(10,8,7,.72); }
+.rcard{
+  width:212px; background:var(--bg-card);
+  border:1px solid var(--line-metal); border-radius:5px;
+  box-shadow:0 16px 40px rgba(0,0,0,.66);
+  overflow:hidden; position:relative;
+  transform:scale(.85); opacity:0;
+  transition:transform .4s cubic-bezier(.34,1.5,.64,1), opacity .3s;
+}
+.result.show .rcard{ transform:scale(1); opacity:1; }
+.rcard__verdict{
+  padding:9px 12px 8px; text-align:center;
+  font-family:var(--font-display); font-size:14px;
+  border-bottom:1px solid var(--line-metal);
+}
+.rcard__verdict.alive{ color:var(--dur-high); background:rgba(122,155,118,.1); }
+.rcard__verdict.dead{  color:var(--dur-low);  background:rgba(156,63,38,.14); }
+.rcard__half{ display:flex; flex-direction:column; align-items:center; text-align:center; gap:5px; padding:15px 12px; }
+.rcard__weaponwrap{ position:relative; }
+.rcard__ico{ width:48px; height:48px; }
+.rcard__name{ font-family:var(--font-display); font-size:17px; }
+.rcard__sub{ font-size:10px; color:var(--ink-dim); margin-top:2px; }
+.rcard__num{ font-family:var(--font-mono); font-weight:700; font-size:16px; margin-top:3px; }
+.rseam{ display:block; width:100%; height:11px; }
+.rseam path{ stroke:var(--line-metal); stroke-width:1.4; fill:none; }
+.rcard__foot{
+  font-size:10.5px; color:var(--ink-dim); text-align:center;
+  padding:8px 10px 11px; border-top:1px dashed var(--line-metal); line-height:1.55;
+}
+.rcard__foot b{ color:var(--ink); font-weight:700; }
+.rcard__foot.warn b{ color:var(--dur-low); }
+
+/* 내구도 — 닳은 만큼이 눈에 보이게 깎여나간다 */
+.rcard__wear{ padding:9px 13px 12px; border-top:1px dashed var(--line-metal); }
+.wear__bar{ position:relative; height:8px; border-radius:4px; background:rgba(255,255,255,.06); overflow:hidden; }
+.wear__fill{ position:absolute; left:0; top:0; bottom:0; border-radius:4px;
+  transition:width 1s cubic-bezier(.4,0,.3,1) .35s; }
+/* 파손과 같은 붉은색을 쓰지 않는다 — "잃음"과 "깨짐"은 다른 색이어야 한다 */
+.wear__lost{
+  position:absolute; top:0; bottom:0; border-radius:4px;
+  background:repeating-linear-gradient(45deg, rgba(233,221,198,.16) 0 4px, rgba(233,221,198,.06) 4px 8px);
+  transition:opacity .6s ease, transform .6s cubic-bezier(.4,0,.3,1); transform-origin:left center;
+}
+.wear__lost.fade{ opacity:0; transform:scaleX(.6); }
+.wear__row{ display:flex; justify-content:space-between; align-items:baseline; margin-top:7px; }
+.wear__k{ font-size:10px; color:var(--ink-dim); }
+.wear__v{ font-family:var(--font-mono); font-size:11px; color:var(--ink-dim); }
+.wear__v b{ font-size:14px; color:var(--ink); }
+.wear__drop{
+  text-align:right; font-family:var(--font-mono); font-weight:700; font-size:12px;
+  color:var(--dur-low); margin-top:2px; opacity:0; transform:translateY(-4px);
+}
+.wear__drop.show{ animation:dropIn 1.1s cubic-bezier(.34,1.4,.64,1) forwards; }
+@keyframes dropIn{
+  0%{ opacity:0; transform:translateY(-6px); }
+  22%{ opacity:1; transform:translateY(0); }
+  75%{ opacity:1; transform:translateY(0); }
+  100%{ opacity:.45; transform:translateY(3px); }
+}
+
+/* 용사의 죽음 — 사라지지 않는다. 그 사람다움(고유색)만 빠져나간다. */
+.rcard__half--hero .rcard__ico{ transition:color 1.4s ease, filter 1.4s ease; }
+.rcard.lost .rcard__half--hero .rcard__ico{ animation:heroDrain 1.6s cubic-bezier(.4,0,.6,1) .1s forwards; }
+@keyframes heroDrain{
+  0%{ filter:saturate(1) brightness(1); }
+  30%{ filter:saturate(.45) brightness(.85); }
+  100%{ filter:saturate(0) brightness(.62); }
+}
+.rcard.lost .rcard__half--hero .rcard__name{ animation:heroNameDrain 1.6s ease .1s forwards; }
+@keyframes heroNameDrain{ 0%{ color:var(--ink); } 100%{ color:var(--ink-dim); } }
+/* 이름 아래 조용한 한 줄 — 도장도 효과음도 없이 */
+.rcard__gone{
+  font-family:var(--font-mono); font-size:8.5px; letter-spacing:.14em;
+  color:var(--ink-dim); opacity:0; margin-top:4px;
+}
+.rcard.lost .rcard__gone{ animation:goneIn 1s ease-out 1.1s forwards; }
+@keyframes goneIn{ to{ opacity:.55; } }
+
+/* 무기의 소멸 — 용사와 같은 문법. 형태는 남고 색만 빠져나간다. */
+.rcard__half--weapon{ position:relative; }
+.rcard__half--weapon .rcard__ico{ transition:color 1.4s ease, filter 1.4s ease; }
+.rcard.lost .rcard__half--weapon .rcard__ico{ animation:heroDrain 1.6s cubic-bezier(.4,0,.6,1) .1s forwards; }
+.rcard.lost .rcard__half--weapon .rcard__name{ animation:heroNameDrain 1.6s ease .1s forwards; }
+.rcard.lost .rcard__half--weapon .rcard__num{ animation:heroNameDrain 1.6s ease .1s forwards; }
+
+/* 파손 — 무기에만 일어난다. 용사 쪽은 움직이지 않는다. */
+.rcard.broken{ overflow:visible; }
+.rcard.broken .rcard__weaponwrap{
+  animation:shatterShake .5s cubic-bezier(.36,.07,.19,.97) .3s; overflow:visible;
+}
+@keyframes shatterShake{
+  0%{ transform:scale(1) translate(0,0); }
+  12%{ transform:scale(1.05) translate(0,-3px); }
+  24%{ transform:scale(1) translate(-6px,2px) rotate(-1.6deg); }
+  38%{ transform:scale(1) translate(5px,-1px) rotate(1.2deg); }
+  54%{ transform:scale(1) translate(-4px,2px) rotate(-.8deg); }
+  70%{ transform:scale(1) translate(2px,1px) rotate(.5deg); }
+  100%{ transform:scale(1) translate(0,0); }
+}
+/* 균열선 — 무기 블록 안에서만 그어진다 */
+.rcard__crackline{ position:absolute; inset:0; z-index:6; pointer-events:none; opacity:0; }
+.rcard.broken .rcard__crackline{ animation:crackFlash 1.1s ease-out forwards; }
+.rcard__crackline path{
+  stroke:#ffb27a; stroke-width:2.6; fill:none;
+  filter:drop-shadow(0 0 6px rgba(255,140,70,.95)) drop-shadow(0 0 14px rgba(207,91,46,.7));
+  stroke-dasharray:220; stroke-dashoffset:220;
+}
+.rcard.broken .rcard__crackline path{ animation:crackDraw .3s cubic-bezier(.5,0,.4,1) forwards; }
+@keyframes crackDraw{ to{ stroke-dashoffset:0; } }
+@keyframes crackFlash{ 0%{ opacity:0; } 8%{ opacity:1; } 70%{ opacity:1; } 100%{ opacity:.35; } }
+/* 무기 아이콘·이름이 둘로 갈라져 어긋난다 */
+.rcard.broken .rcard__piece--r{ animation:splitR 1.05s cubic-bezier(.3,.5,.2,1) .42s forwards; }
+@keyframes splitR{
+  0%{ transform:none; }
+  18%{ transform:translate(3px,-2px) rotate(1deg); }
+  100%{ transform:translate(14px,16px) rotate(6deg); opacity:.5; }
+}
+.shard{
+  position:absolute; left:50%; top:50%; z-index:7; pointer-events:none;
+  width:7px; height:9px; background:var(--ink-dim);
+  clip-path:polygon(50% 0, 100% 62%, 62% 100%, 6% 74%); opacity:0;
+}
+.rcard.broken .shard{ animation:shardFly .95s cubic-bezier(.2,.6,.3,1) .38s forwards; }
+@keyframes shardFly{
+  0%{ opacity:1; transform:translate(0,0) rotate(0deg) scale(1); }
+  100%{ opacity:0; transform:translate(var(--sx),var(--sy)) rotate(var(--sr)) scale(.4); }
+}
+.rcard__flash{
+  position:absolute; inset:0; z-index:8; pointer-events:none;
+  background:radial-gradient(circle at 50% 50%, rgba(255,214,170,.92) 0%, rgba(207,91,46,.35) 40%, transparent 70%);
+  opacity:0;
+}
+.rcard.broken .rcard__flash{ animation:breakFlash .5s ease-out .3s; }
+@keyframes breakFlash{ 0%{ opacity:0; } 14%{ opacity:1; } 100%{ opacity:0; } }
+
+.result__msg{
+  font-size:12.5px; color:var(--ink); line-height:1.6; text-align:center; max-width:250px;
+  background:var(--bg-card); border:1px solid var(--line-metal); border-radius:5px;
+  padding:10px 14px; transform:translateY(8px); opacity:0;
+  transition:transform .3s cubic-bezier(.34,1.4,.64,1) .1s, opacity .28s .1s;
+}
+.result.show .result__msg{ transform:none; opacity:1; }
+.result__msg.paper{ color:#c8b895; font-style:italic; }
+.result__next{
+  font-family:var(--font-mono); font-size:9px; letter-spacing:.1em; color:var(--ink-dim);
+  opacity:0; transition:opacity .3s .5s;
+}
+.result.show .result__next{ opacity:1; }
+
+.night-summary{
+  position:absolute; inset:0; z-index:41;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px;
+  padding:30px; background:rgba(10,8,7,.9);
+  opacity:0; pointer-events:none; transition:opacity .35s;
+}
+.night-summary.show{ opacity:1; pointer-events:auto; }
+.night-summary__title{ font-family:var(--font-display); font-size:20px; }
+.night-summary__rows{ width:100%; max-width:260px; display:flex; flex-direction:column; gap:9px; }
+.night-summary__row{
+  display:flex; justify-content:space-between; align-items:center;
+  border-bottom:1px dashed var(--line-metal); padding-bottom:7px; font-size:12px; color:var(--ink-dim);
+}
+.night-summary__row b{ font-family:var(--font-mono); font-size:14px; color:var(--ink); }
+.night-summary__row.alive b{ color:var(--dur-high); }
+.night-summary__row.dead b{ color:var(--dur-low); }
+.night-summary__next{
+  font-family:var(--font-body); font-weight:700; font-size:12px; color:var(--ink);
+  background:var(--bg-card); border:1px solid var(--line-metal); border-radius:4px;
+  padding:10px 20px; cursor:pointer; margin-top:6px;
+}
+.night-summary__next:hover{ border-color:var(--grade-unique); }
+
+/* ── 봉투 트레이 — 뜯는 순서는 당신이 정한다 ── */
+.tray{ display:flex; flex-direction:column; gap:10px; }
+.sealed{
+  position:relative; cursor:pointer; overflow:hidden;
+  background:linear-gradient(160deg, #2f2820 0%, #241e18 100%);
+  border:1px solid var(--line-metal); border-radius:4px;
+  padding:14px 14px 13px 52px; min-height:66px;
+  box-shadow:0 5px 14px rgba(0,0,0,.45);
+  transition:border-color .16s, transform .16s, opacity .3s;
+}
+.sealed:hover{ border-color:var(--grade-unique); transform:translateY(-2px); }
+.sealed__flap{
+  position:absolute; left:0; top:0; width:44px; height:100%;
+  background:linear-gradient(175deg, #362d24 0%, #2a231c 100%);
+  border-right:1px solid var(--line-metal);
+  clip-path:polygon(0 0, 100% 0, 62% 50%, 100% 100%, 0 100%);
+}
+.sealed__wax{
+  position:absolute; left:22px; top:50%; transform:translate(-50%,-50%) rotate(-6deg);
+  width:26px; height:26px; border-radius:50%; z-index:2;
+  border:1.4px solid var(--stamp-ink); color:var(--stamp-ink);
+  background:rgba(18,15,13,.72);
+  font-family:var(--font-display); font-size:10px;
+  display:flex; align-items:center; justify-content:center;
+}
+.sealed__dest{ font-family:var(--font-display); font-size:14px; color:var(--ink); }
+.sealed__who{ font-size:10.5px; color:var(--ink-dim); margin-top:3px; }
+.sealed__ago{ font-family:var(--font-mono); font-size:9px; color:var(--ink-dim); margin-top:4px; letter-spacing:.04em; }
+.sealed.opened{ opacity:.3; pointer-events:none; }
+
+/* 던전 상세 시트 */
+.sheet{
+  position:absolute; inset:0; z-index:28; background:rgba(10,8,7,.72);
+  display:flex; align-items:flex-end; opacity:0; pointer-events:none; transition:opacity .3s;
+}
+.sheet.on{ opacity:1; pointer-events:auto; }
+.sheet__panel{
+  width:100%; background:var(--bg-card); border-top:1px solid var(--line-metal);
+  border-radius:14px 14px 0 0; padding:12px 16px 22px; max-height:74%; overflow-y:auto;
+  transform:translateY(100%); transition:transform .4s cubic-bezier(.4,.15,.2,1);
+}
+.sheet.on .sheet__panel{ transform:none; }
+.sheet__grip{ width:38px; height:3px; background:var(--line-metal); border-radius:2px; margin:0 auto 12px; }
+.sheet__title{ font-family:var(--font-display); font-size:19px; color:var(--accent); }
+.sheet__turn{ font-family:var(--font-mono); font-size:10px; color:var(--ink-dim); margin-top:3px; letter-spacing:.08em; }
+.sheet__k{ font-family:var(--font-mono); font-size:8.5px; letter-spacing:.14em; color:var(--ink-dim); margin:14px 0 5px; }
+.sheet__rumor{ font-size:11.5px; font-style:italic; line-height:1.65; }
+.sheet__log{ font-size:10.5px; color:var(--ink-dim); line-height:1.75; }
+.sheet__log b{ color:var(--dur-low); font-weight:700; }
+.sheet__none{ font-size:11px; color:var(--ink-dim); }
+
+.toast{
+  position:absolute; left:50%; bottom:180px; transform:translate(-50%,10px);
+  background:rgba(20,16,13,.96); border:1px solid var(--line-metal); border-radius:4px;
+  padding:8px 14px; font-size:11px; color:var(--ink); z-index:20;
+  opacity:0; pointer-events:none; transition:.28s;
+}
+.toast.on{ opacity:1; transform:translate(-50%,0); }
+</style>
+</head>
+<body>
+<div class="phone">
+
+  <div class="top">
+    <div class="top__bar">
+      <button class="backbtn hidden" id="mapBackBtn">‹</button>
+      <div class="day" id="dayLabel">DAY 1 · 던전 지도</div>
+      <span class="backbtn" style="visibility:hidden">‹</span>
+    </div>
+  </div>
+
+  <div style="position:relative; flex:1; min-height:0;" id="mapWrap">
+    <div class="map" id="map">
+      <div class="map__inner" id="mapInner">
+        <div class="dark">
+          <div class="dark__label">아직 아무도 말하지 않은 곳</div>
+        </div>
+        <div class="shop" id="shopBar">
+          <div class="shop__house">
+            <svg viewBox="0 0 96 46" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
+              <path d="M14 44 V20 L48 4 L82 20 V44"/>
+              <path d="M8 21 L48 1 L88 21" stroke-width="2"/>
+              <path d="M40 44 V30 H56 V44"/>
+              <path d="M22 26 H32 V34 H22 Z"/>
+              <path d="M64 26 H74 V34 H64 Z"/>
+              <path d="M6 44 H90" stroke-width="1.2" opacity=".7"/>
+            </svg>
+            <div class="shop__win"></div>
+          </div>
+          <span class="shop__label">상점</span>
+        </div>
+      </div>
+    </div>
+    <div class="map__fade map__fade--top"></div>
+    <div class="map__fade map__fade--bot"></div>
+    <div class="scrollhint" id="scrollHint">↑ 더 깊은 곳</div>
+    <div class="dfocus" id="dfocus"></div>
+    <div class="return-status" id="returnStatus">
+      <div class="return-status__stack" id="returnStack"></div>
+      <div class="return-status__label" id="returnLabel"></div>
+    </div>
+  </div>
+
+  <div class="page" id="page">
+    <div class="page__top">
+      <span class="page__day" id="pageDay">DAY 1</span>
+      <span class="page__phase" id="pagePhase">상점</span>
+      <button class="mapbtn" id="shopMapBtn"></button>
+    </div>
+    <div class="page__sub" id="pageSub"></div>
+    <div class="page__body" id="panelBody"></div>
+    <div class="page__acts" id="pageActs"></div>
+  </div>
+
+  <div class="ldrawer" id="ldrawer">
+    <div class="ldrawer__grip" id="ldrawerGrip">
+      <span class="ldrawer__title">대여 중</span>
+      <span class="ldrawer__count" id="ldrawerCount"></span>
+      <span class="ldrawer__chev">▾</span>
+    </div>
+    <div class="ldrawer__body" id="ldrawerBody"></div>
+  </div>
+
+  <div class="greet" id="greet">
+    <div class="greet__top">
+      <span class="greet__day" id="greetDay">DAY 1 · 낮</span>
+      <span class="greet__topr">
+        <span class="queue" id="queue"></span>
+        <button class="mapbtn" id="mapBtn"></button>
+      </span>
+    </div>
+    <div class="hero-zone" id="heroZone"></div>
+    <div class="deck-zone"><div class="rail" id="rail"></div></div>
+    <div class="counter" id="counter"></div>
+    <div class="greet__hint"><b>좌우</b>로 훑고 · <b>위로</b> 밀어 건넨다</div>
+
+    <div class="merge-overlay" id="mergeOverlay">
+      <div class="merge-card-wrap" id="mergeCardWrap"></div>
+      <div class="merge-bubble" id="mergeBubble">
+        <span class="merge-bubble__mood" id="mergeMood"></span>
+        <span id="mergeLine"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="closing" id="closing">
+    <div class="closing__door"><div class="closing__door-glow"></div></div>
+    <div class="closing__k">CLOSED FOR THE NIGHT</div>
+    <div class="closing__title" id="closingTitle">오늘의 문을 닫는다</div>
+    <div class="closing__desc" id="closingDesc"></div>
+    <div class="closing__count"><span>빌려준 무기</span><b id="closingCount">0</b><span>자루</span></div>
+    <button class="closing__btn" id="closeShopBtn">문을 닫고 던전 지도를 본다</button>
+  </div>
+
+  <div class="talk" id="talk">
+    <div class="talk__box">
+      <div class="talk__who" id="talkWho"></div>
+      <div class="talk__line" id="talkLine"></div>
+      <div class="talk__more" id="talkMore"></div>
+      <div class="talk__close">탭하면 닫힌다</div>
+    </div>
+  </div>
+
+  <div class="sheet" id="sheet">
+    <div class="sheet__panel" id="sheetPanel"></div>
+  </div>
+
+  <div class="forge-popup" id="forgePopup">
+    <div class="forge-popup__panel" id="forgePopupPanel"></div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<!-- 야간 개봉은 휴대폰 모형이 아니라 실제 브라우저 뷰포트 전체를 덮는다. -->
+<div class="reveal" id="reveal"></div>
+
+<div class="result" id="result">
+  <div class="rcard" id="rcard"></div>
+  <div class="result__msg" id="rmsg"></div>
+  <div class="result__next">탭하면 다음</div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════
+   던전 지도 프로토타입
+   원칙: 지도는 "어디쯤"만 말한다. "어떤지"는 절대 말하지 않는다.
+   ═══════════════════════════════════════════ */
+
+const $ = id => document.getElementById(id);
+
+/* ── 의사난수 (카드 균열선 시드) ── */
+/* ═══ [§ui.rand] 시드 난수 · 균열선 ═══ */
+function mulberry32(s){ return function(){ s|=0; s=s+0x6D2B79F5|0; let t=Math.imul(s^s>>>15,1|s);
+  t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+function seedOf(str){ let h=0; for(let i=0;i<str.length;i++) h=(h*31+str.charCodeAt(i))|0; return h; }
+function crackSVG(id, w, cls){
+  cls = cls || 'crack';
+  const rand=mulberry32(seedOf(id)), segs=6, step=w/segs;
+  let d=`M0,${(4+rand()*2).toFixed(1)}`;
+  for(let i=1;i<=segs;i++) d+=` L${(step*i).toFixed(1)},${(4+(rand()*5-2.5)).toFixed(1)}`;
+  return `<svg class="${cls}" viewBox="0 0 ${w} 9" preserveAspectRatio="none"><path d="${d}"/></svg>`;
+}
+
+/* ── 아이콘 ── */
+/* ═══ [§ui.icon] 아이콘 · 실루엣 ═══ */
+const ICON = {
+  anvil:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round">
+    <path d="M3 8h11l4 3h3l-2 4H8l-3-3H3zM9 15v3M15 15v3M6 21h12"/></svg>`,
+  loan:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round">
+    <rect x="3" y="5" width="14" height="15" rx="1.5"/><path d="M7 5V3.5h13.5V18M6.5 10h7M6.5 14h5"/></svg>`,
+  map:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round">
+    <path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2zM9 4v14M15 6v14"/></svg>`,
+  hero:`<svg viewBox="0 0 60 60" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="30" cy="16" r="8"/><path d="M14 52 L20 28 Q30 22 40 28 L46 52"/></svg>`,
+  dungeon:`<svg viewBox="0 0 60 60" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 52 V30 Q30 6 52 30 V52"/><path d="M22 52 V38 Q30 28 38 38 V52"/></svg>`,
+  shop:`<svg viewBox="0 0 60 60" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 26 L30 10 L52 26"/><path d="M13 26 V50 H47 V26"/><path d="M25 50 V36 H35 V50"/></svg>`
+};
+/* 던전별 고유 실루엣 — 이름만 다른 구멍이 되지 않게 */
+const DICON = {
+  '폐광': `<svg viewBox="0 0 60 60" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M6 52 V26 L30 12 L54 26 V52"/><path d="M14 52 V30 H46 V52"/>
+      <path d="M22 52 V38 Q30 31 38 38 V52"/><path d="M14 38 H22 M38 38 H46"/></svg>`,
+  '화룡 소굴': `<svg viewBox="0 0 60 60" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M5 52 L12 30 L19 40 L26 20 L33 38 L41 26 L48 42 L55 52"/>
+      <path d="M22 52 Q30 40 38 52"/><path d="M30 45 Q27 39 30 34 Q33 39 30 45"/></svg>`,
+  '안개 골짜기': `<svg viewBox="0 0 60 60" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 52 L20 18 L30 34 L40 14 L56 52"/>
+      <path d="M10 42 H26 M34 46 H52 M18 48 H44" opacity=".62"/></svg>`
+};
+const MILESTONE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 21 V9"/><path d="M12 9 L20 6 L12 3"/><path d="M8 21 H16"/></svg>`;
+
+/* 무기 실루엣 — forge가 뽑아낸 외곽선 자리. 종류별로 다른 형태. */
+const WSIL = {
+  '도':  `<svg viewBox="0 0 60 60" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M32 5 Q37 16 36 34 L31 43 L28 34 L28 12 Z"/><path d="M20 43 H40"/><path d="M30 43 V55"/></svg>`,
+  '대검':`<svg viewBox="0 0 60 60" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M30 3 L37 11 L37 36 L30 44 L23 36 L23 11 Z"/><path d="M15 44 H45"/><path d="M30 44 V57"/><path d="M25 57 H35"/></svg>`,
+  '단검':`<svg viewBox="0 0 60 60" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M30 12 L35 18 L35 34 L30 40 L25 34 L25 18 Z"/><path d="M20 40 H40"/><path d="M30 40 V52"/></svg>`,
+  '도끼':`<svg viewBox="0 0 60 60" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M30 8 V54"/><path d="M30 10 Q46 12 47 24 Q46 34 30 34"/></svg>`,
+  '침':  `<svg viewBox="0 0 60 60" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M30 3 L33 14 L33 40 L30 45 L27 40 L27 14 Z"/><path d="M24 45 H36"/><path d="M30 45 V56"/></svg>`
+};
+
+/* ═══ [§core.dungeons] 던전 데이터 ═══
+   §11 판단 축. 요구치(need)는 어디에도 노출하지 않는다.
+   keys  — 이 던전을 가리키는 키워드. 살아 돌아온 자만 하나씩 물고 온다.
+   일부는 일부러 겹친다. 겹쳐야 조합으로 좁히게 된다.
+   다만 던전마다 배타적 키워드가 최소 하나는 있어야 확정이 가능하다. */
+const DUNGEONS = {
+  '폐광':       { turns:1, accent:'var(--attr-none)',  need:50,  lane:0, axis:'기준선',
+                  keys:['좁음','어두움','썩은 나무','고인 물'],
+                  hint:'나무 냄새가 난다더군',
+                  lines:{
+                    '좁음':['"어깨가 벽에 닿을 지경이야."','"허리를 펴고 걷질 못한대."'],
+                    '어두움':['"등불이 두 걸음 앞도 못 비춘다더군."','"눈이 아무 소용 없다는 곳이야."'],
+                    '썩은 나무':['"버팀목이 삭아서 손만 대도 부스러진다지."','"나무 썩는 냄새가 배어 있대."'],
+                    '고인 물':['"발목까지 물이 찬 데가 있다더군."','"물소리가 계속 들린다지."']
+                  },
+                  loot:['무쇠','강철'], unlocked:true, sent:0, lost:0, log:[],
+                  known:new Set(), lootKnown:new Set() },
+
+  '화룡 소굴':  { turns:2, accent:'var(--attr-fire)',  need:88,  lane:1, axis:'속성',
+                  keys:['좁음','뜨거움','유황','외길'],
+                  hint:'숨이 막힌다더군',
+                  lines:{
+                    '좁음':['"안쪽이 점점 좁아진다더군."','"둘이 나란히는 못 지나간대."'],
+                    '뜨거움':['"벽이 손을 못 댈 만큼 뜨겁다지."','"안쪽 공기가 뜨겁다더군."'],
+                    '유황':['"코가 매워서 오래 못 있는대."','"썩은 달걀 냄새가 진동한다더군."'],
+                    '외길':['"길이 하나뿐이라 돌아 나올 데가 없대."','"들어가면 앞으로만 가야 한다지."']
+                  },
+                  loot:['화염석','용린'], unlocked:true, sent:0, lost:0, log:[],
+                  known:new Set(), lootKnown:new Set() },
+
+  '안개 골짜기':{ turns:3, accent:'var(--attr-frost)', need:118, lane:2, axis:'정보 부패',
+                  keys:['어두움','추위','안개','바뀌는 길'],
+                  hint:'춥다더군',
+                  lines:{
+                    '어두움':['"낮인데도 밤 같다더군."','"해가 안 든다지."'],
+                    '추위':['"숨이 하얗게 언다더군."','"뼈까지 시리다지."'],
+                    '안개':['"두 걸음 앞이 안 보인다더군."','"손을 뻗으면 손끝이 흐려진대."'],
+                    '바뀌는 길':['"갈 때마다 길이 다르다고들 해."','"어제 온 길로 못 돌아온다지."']
+                  },
+                  loot:['서리결정','미스릴'], unlocked:false, sent:0, lost:0, log:[],
+                  known:new Set(), lootKnown:new Set() }
+};
+
+/* 이름은 키워드를 모두 채운 뒤에야 밝혀진다.
+   내부 로직은 실제 이름을 계속 사용하고 화면 표기만 감춘다. */
+const DUNGEON_ORDER = Object.keys(DUNGEONS);
+function dungeonName(name){
+  const D = DUNGEONS[name];
+  if(!D) return name;
+  const identified = D.keys.every(k=>D.known.has(k));
+  return identified ? name : `던전${DUNGEON_ORDER.indexOf(name)+1}`;
+}
+/* 좌표계 — 세로 스크롤. 위로 갈수록 멀고 깊다.
+   턴당 간격을 넉넉히 벌려 "3턴은 화면 밖에 있다"가 몸으로 읽히게 한다. */
+const LANE_X   = [66, 195, 324];
+const NODE_Y   = { 3:186, 2:520, 1:854 };   // 소요 턴이 곧 세로 위치 = 거리
+const SHOP_Y   = 1150;
+const NODE_H   = 104;
+const MAP_H    = SHOP_Y + 104;   // 상점 아래 여유 — 하단 페이드에 가리지 않게
+
+/* ═══ [§core.entity] 용사 / 무기 ═══ */
+const HERO_POOL = [
+  { name:'다린',   dispo:'무모', skill:62, accent:'var(--attr-fire)'  },
+  { name:'세니아', dispo:'신중', skill:52, accent:'var(--attr-frost)' },
+  { name:'보르크', dispo:'균형', skill:45, accent:'var(--attr-holy)'  },
+  { name:'이르마', dispo:'무모', skill:38, accent:'var(--attr-none)'  },
+  { name:'코브',   dispo:'신중', skill:58, accent:'var(--attr-frost)' }
+];
+const GRADE = {
+  common:{ l:'하급',   c:'var(--grade-common)' }, mid:{ l:'중급', c:'var(--grade-mid)' },
+  high:{   l:'상급',   c:'var(--grade-high)'   }, unique:{ l:'유니크', c:'var(--grade-unique)' }
+};
+const WNAMES = {
+  common:['무쇠 단검','낡은 창','헌 도'], mid:['강철 도','철제 대검','단단한 도끼'],
+  high:['은빛 레이피어','불린 대검','예리한 도'], unique:['서리대검','용린 도','묵빛 도끼']
+};
+const WTYPES = ['도','대검','단검','도끼','침'];
+
+let wid = 0;
+function makeWeapon(gradeHint){
+  const roll = Math.random();
+  const grade = gradeHint || (roll<.42?'common':roll<.76?'mid':roll<.94?'high':'unique');
+  const base  = { common:46, mid:76, high:100, unique:128 }[grade];
+  const type  = WTYPES[(Math.random()*WTYPES.length)|0];
+  const names = WNAMES[grade];
+  return {
+    id:'w'+(++wid), name:names[(Math.random()*names.length)|0], type, grade,
+    atk: base + ((Math.random()*16)|0) - 8,
+    dur: 70 + ((Math.random()*30)|0), durMax:100,
+    brit: 5 + ((Math.random()*22)|0)          // 담금질에서 온 취성 — forge 이음매
+  };
+}
+
+const MATS_PER_WEAPON = 3;   // 무기 하나에 드는 재료 개수
+
+/* 재료. 흔한 것과 귀한 것이 있고, 속성 재료는 그 던전에서만 나온다.
+   무엇을 섞느냐가 등급과 속성을 정한다. */
+const MATERIALS = {
+  '무쇠':    { tier:1, attr:'none',  c:'#6b6355' },
+  '강철':    { tier:2, attr:'none',  c:'#8f9aa3' },
+  '화염석':  { tier:2, attr:'fire',  c:'#cf5b2e' },
+  '용린':    { tier:3, attr:'fire',  c:'#e08a3c' },
+  '서리결정':{ tier:2, attr:'frost', c:'#5f8fa8' },
+  '미스릴':  { tier:3, attr:'frost', c:'#9fc4d4' }
+};
+
+/* ═══ [§core.state] 상태 ═══ */
+const S = {
+  day:1, phase:'shop',
+  stock:[ makeWeapon('mid'), makeWeapon('common'), makeWeapon('high') ],
+  guests:[], pending:[], peeking:false, peekFrom:'greet',        // 오늘 접객에서 건넨 것들
+  out:[],                       // 나가 있는 것들
+  sealed:[], reading:null,                    // 오늘 돌아온 봉인 카드
+  mats:{ '무쇠':2, '강철':1 },   // 종류별 보유량
+  fragments:0
+};
+
+let forgeSelection = [];
+let shopSection = 'home';
+
+/* ═══ [§core.outcome] 생환 판정 — 내보내는 순간 확정되고, 뜯기 전까지 어디에도 드러나지 않는다 ═══ */
+function rollOutcome(hero, wp, dName){
+  const D = DUNGEONS[dName];
+  const power = wp.atk * (1 + hero.skill/100);
+  const r = (power - D.need) / D.need;
+  let surv = power >= D.need ? 50 + 38*(1 - Math.exp(-3.0*r)) : 50*Math.exp(2.0*r);
+  surv = Math.max(5, Math.min(88, surv));
+  const alive = Math.random()*100 < surv;
+  if(!alive) return { kind:'dead', surv };
+  const dispoK = hero.dispo==='무모'?1.3:hero.dispo==='신중'?0.78:1.0;
+  const wear = Math.round((10 + D.turns*6) * dispoK);
+  const broke = (wp.dur - wear) <= 0 || Math.random()*100 < wp.brit;
+  return { kind: broke ? 'broken' : 'alive', wear, surv };
+}
+function reactionOf(hero, wp, dName){
+  const p = wp.atk * (1 + hero.skill/100) / DUNGEONS[dName].need;
+  return p >= 1.55 ? { l:'받아들임', c:'var(--dur-high)' }
+       : p >= 1.05 ? { l:'망설임',   c:'var(--dur-mid)'  }
+                   : { l:'불만',     c:'var(--dur-low)'  };
+}
+
+/* ═══════════════════════════════════════════
+   [§scr.greet] 접객 — 낮
+   greet_swipe 원본 이식.
+   용사 카드 위로 = 돌려보냄 / 무기 카드 좌우 = 훑기, 위로 = 건넴
+   건네면 두 장이 합쳐져 대여 카드가 되고, 지도로 빨려 들어간다.
+   ═══════════════════════════════════════════ */
+const G = { heroes:[], idx:0, cursor:0, locked:false, card:null };
+
+/* 용사는 목적지 이름을 말하지 않는다. 그가 들은 것만 말한다. */
+const TAIL = {
+  '무모':['"겁먹을 시간은 없어."','"안쪽까지 들어갈 참이네."','"돌아올 생각은 안 하네."'],
+  '신중':['"무리는 안 할 생각이야."','"돌아올 만큼만 하고 오겠네."','"준비는 해야지."'],
+  '균형':['"늘 하던 대로 하지."','"오래 걸리진 않을 거야."','"쓸 만한 걸로 부탁하네."']
+};
+const MOOD_LABEL = { good:'받아들임', mid:'망설임', bad:'불만' };
+const MOOD_LINE = {
+  good:['"이거면 되겠어. 고맙네."','"묵직하군. 믿어보지."'],
+  mid: ['"…뭐, 없는 것보단 낫겠지."','"이걸로 될까. 해봐야 알겠군."'],
+  bad: ['"이걸 들고 가라고?"','"돌아올 자신이 없어지는군."']
+};
+
+function heroSpeech(h){
+  const D = DUNGEONS[h.dest];
+  const known = D.keys.filter(k=>D.known.has(k));
+  const pool = known.length ? known : D.keys;
+  const r = mulberry32(seedOf(h.name + h.dest + S.day));
+  const pick = pool[Math.floor(r()*pool.length)];
+  const cand = D.lines[pick];
+  return {
+    clue: cand[Math.floor(r()*cand.length)],
+    tail: TAIL[h.dispo][Math.floor(r()*TAIL[h.dispo].length)],
+    keyword: pick
+  };
+}
+function moodOf(h, w){
+  const p = w.atk * (1 + h.skill/100) / DUNGEONS[h.dest].need;
+  return p >= 1.55 ? 'good' : p >= 1.05 ? 'mid' : 'bad';
+}
+
+function startGreet(){
+  S.phase = 'greet';
+  G.heroes = S.guests.slice(); G.idx = 0; G.cursor = 0; G.locked = false;
+  $('greetDay').textContent = `DAY ${S.day} · 낮`;
+  $('greet').classList.add('on');
+  showPage(false);
+  renderHero(); renderRail();
+}
+
+function renderQueue(){
+  $('queue').innerHTML = G.heroes.map((_,i)=>
+    `<span class="${i<G.idx?'done':i===G.idx?'on':''}"></span>`).join('');
+}
+
+function renderHero(){
+  renderQueue();
+  const zone = $('heroZone');
+  if(G.idx >= G.heroes.length){ zone.innerHTML=''; $('rail').innerHTML=''; endGreet(); return; }
+
+  const h = G.heroes[G.idx];
+  const sp = heroSpeech(h);
+  h._sp = sp;
+
+  zone.innerHTML = `
+    <div class="hero-card" id="heroCard" style="--h-accent:${h.accent}">
+      <div class="hero-card__send" data-send>돌려보내기</div>
+      <div class="hero-card__face">
+        <div class="hero-card__accent"></div>
+        <div class="hero-card__inner">
+          <div class="hero-ico">${ICON.hero}</div>
+          <div class="hero-name">${h.name}</div>
+          <div class="hero-chip">${h.dispo}</div>
+          <div class="hero-skill">숙련 ${h.skill}</div>
+        </div>
+      </div>
+    </div>
+    <div class="hero-drag-hint">탭하면 상세 · 위로 밀면 돌려보낸다</div>
+    <div class="bubble" id="bubble">
+      <span class="bubble__hint">TAP</span>
+      ${sp.clue}
+      <span class="bubble__tail">${sp.tail}</span>
+    </div>`;
+
+  $('bubble').addEventListener('click', e=>{
+    e.stopPropagation();
+    $('talkWho').textContent = `${h.name} · ${h.dispo}`;
+    $('talkLine').textContent = sp.clue;
+    $('talkMore').textContent = sp.tail;
+    $('talk').classList.add('show');
+    const hc = $('heroCard');
+    hc.classList.remove('talking'); void hc.offsetWidth; hc.classList.add('talking');
+  });
+  bindHeroDrag();
+  renderTopBtns();
+}
+
+/* 지도는 구석에 조용히 둔다 — 파고들 사람만 연다 */
+function renderTopBtns(){
+  const m = $('mapBtn');
+  if(m){ m.innerHTML = `<span class="mapbtn__ico">${ICON.map}</span>`; m.onclick = openPeek; }
+}
+
+/* ── 용사 카드 제스처 ── */
+let heroWinMM=null, heroWinMU=null;
+function bindHeroDrag(){
+  if(heroWinMM) window.removeEventListener('mousemove', heroWinMM);
+  if(heroWinMU) window.removeEventListener('mouseup', heroWinMU);
+  const hc = $('heroCard'); if(!hc) return;
+  const mark = hc.querySelector('[data-send]');
+  let on=false, ax=0, ay=0, adx=0, ady=0, moved=false;
+  const start=(x,y)=>{ if(G.locked) return; on=true; ax=x; ay=y; adx=0; ady=0; moved=false; hc.classList.add('dragging'); };
+  const move=(x,y)=>{
+    if(!on) return;
+    adx=x-ax; ady=y-ay;
+    if(Math.abs(adx)>6 || Math.abs(ady)>6) moved=true;
+    hc.style.transform=`translate(${adx*0.2}px, ${ady}px) rotate(${adx*0.02}deg)`;
+    mark.style.opacity = ady<-30 ? Math.min(1,(-ady-30)/56) : 0;
+  };
+  const end=()=>{
+    if(!on) return; on=false; hc.classList.remove('dragging');
+    if(!moved){ hc.style.transform=''; mark.style.opacity=0; openHeroDetail(G.heroes[G.idx]); return; }
+    if(ady < -Math.max(56, hc.getBoundingClientRect().height * 0.49)){ doSendAway(); return; }
+    hc.style.transform=''; mark.style.opacity=0;
+  };
+  hc.addEventListener('touchstart', e=>start(e.touches[0].clientX,e.touches[0].clientY), {passive:true});
+  hc.addEventListener('touchmove',  e=>move(e.touches[0].clientX,e.touches[0].clientY), {passive:true});
+  hc.addEventListener('touchend', end);
+  hc.addEventListener('mousedown', e=>{ e.preventDefault(); start(e.clientX,e.clientY); });
+  heroWinMM=e=>move(e.clientX,e.clientY); heroWinMU=end;
+  window.addEventListener('mousemove', heroWinMM);
+  window.addEventListener('mouseup', heroWinMU);
+}
+
+function doSendAway(){
+  G.locked = true;
+  const h = G.heroes[G.idx];
+  const hc = $('heroCard');
+  hc.style.transform='translateY(-120%) rotate(-4deg)';
+  hc.style.opacity='0';
+  toast(`${h.name}을(를) 돌려보냈다.`);
+  setTimeout(nextHero, 480);
+}
+
+/* ── 무기 카드 ── */
+function makeCard(w){
+  const g = GRADE[w.grade];
+  const pct = (w.dur/w.durMax)*100;
+  const dcol = pct>60?'var(--dur-high)':pct>30?'var(--dur-mid)':'var(--dur-low)';
+  const el = document.createElement('div');
+  el.className = 'wcard' + (w.grade==='unique'?' wcard--unique':'');
+  el.style.setProperty('--accent', g.c);
+  el.innerHTML = `
+    <div class="stampMark give" data-give>건네기</div>
+    <div class="flip-hint">TAP</div>
+    <div class="wcard__face">
+      <div class="wcard__accent"></div>
+      <div class="wcard__thumb">${WSIL[w.type]}</div>
+      ${crackSVG(w.id, 186, 'crack')}
+      <div class="wcard__info">
+        <div class="wcard__grade">${g.l} · ${w.type}</div>
+        <div class="wcard__name">${w.name}</div>
+        <div class="wcard__atk">${w.atk}</div>
+        <div class="gauge"><div class="gauge__fill" style="width:${pct}%; background:${dcol};"></div></div>
+        <div class="wcard__brit">내구 ${w.dur} · 취성 <b>${w.brit}%</b></div>
+      </div>
+    </div>`;
+  return el;
+}
+
+function renderRail(dir){
+  const rail = $('rail'); if(!rail) return;
+  rail.innerHTML = '';
+  if(!S.stock.length){
+    rail.innerHTML = `<div class="greet__empty">내어줄 것이 하나도 없다.<br>빈손으로 돌려보내는 것도 결정이다.</div>`;
+    $('counter').textContent=''; G.card=null; return;
+  }
+  const n = S.stock.length;
+  if(G.cursor >= n) G.cursor = 0;
+
+  if(n > 1){ const p = makeCard(S.stock[(G.cursor-1+n)%n]); p.classList.add('wcard--side','prev'); rail.appendChild(p); }
+  if(n > 2){ const x = makeCard(S.stock[(G.cursor+1)%n]); x.classList.add('wcard--side','next'); rail.appendChild(x); }
+
+  const w = S.stock[G.cursor];
+  G.card = makeCard(w);
+  G.card.classList.add('wcard--center');
+  rail.appendChild(G.card);
+  if(dir){
+    G.card.style.transition='none';
+    G.card.style.transform=`translateX(${dir*90}px) scale(.92)`;
+    requestAnimationFrame(()=>{ G.card.style.transition=''; G.card.style.transform=''; });
+  }
+  syncSideOffset();
+  $('counter').textContent = `${G.cursor+1} / ${n}`;
+  bindWeaponDrag();
+}
+
+/* 양옆 카드가 밀리는 거리 = 카드 폭 × 0.763 (원본 186 → 142) */
+function syncSideOffset(){
+  const rail = $('rail'); if(!rail || !G.card) return;
+  const w = G.card.getBoundingClientRect().width || 186;
+  rail.style.setProperty('--side', (w * 0.763).toFixed(1) + 'px');
+}
+function sideOffset(){
+  const v = parseFloat(getComputedStyle($('rail')).getPropertyValue('--side'));
+  return isNaN(v) ? 142 : v;
+}
+
+/* 스와이프 임계치도 카드 폭에 비례해야 한다 — 작은 화면에서 더 멀리 끌게 되면 안 된다 */
+function stepPx(){ return Math.max(58, (G.card ? G.card.getBoundingClientRect().width : 186) * 0.47); }
+function givePx(){ return Math.max(52, (G.card ? G.card.getBoundingClientRect().height : 270) * 0.28); }
+let wDragging=false, wOriginX=0, wOriginY=0, wLastStepX=0, wLastY=0, wMoved=false;
+let wWinMM=null, wWinMU=null;
+
+function bindWeaponDrag(){
+  const c = G.card; if(!c) return;
+  c.addEventListener('touchstart', e=>{ if(G.locked) return; wStart(e.touches[0].clientX, e.touches[0].clientY); }, {passive:true});
+  c.addEventListener('touchmove',  e=>wMove(e.touches[0].clientX, e.touches[0].clientY), {passive:true});
+  c.addEventListener('touchend', wEnd);
+  c.addEventListener('mousedown', e=>{ if(G.locked) return; e.preventDefault(); wStart(e.clientX, e.clientY); });
+  if(wWinMM) window.removeEventListener('mousemove', wWinMM);
+  if(wWinMU) window.removeEventListener('mouseup', wWinMU);
+  wWinMM = e=>wMove(e.clientX, e.clientY); wWinMU = wEnd;
+  window.addEventListener('mousemove', wWinMM);
+  window.addEventListener('mouseup', wWinMU);
+}
+function wStart(x,y){
+  wDragging=true; wOriginX=x; wOriginY=y; wLastStepX=x; wLastY=y; wMoved=false;
+  G.card.classList.add('dragging');
+}
+function wMove(x,y){
+  if(!wDragging || !G.card) return;
+  wLastY=y;
+  const totalDY = y-wOriginY;
+  if(Math.abs(x-wOriginX)>6 || Math.abs(totalDY)>6) wMoved=true;
+
+  let stepDX = x-wLastStepX;
+  const STEP = stepPx();
+  // 임계치를 넘을 때마다 계속 다음 카드로 — 손을 떼지 않아도 훑어 넘어간다
+  if(stepDX <= -STEP){ G.cursor=(G.cursor+1)%S.stock.length; renderRail(); G.card.classList.add('dragging'); wLastStepX=x; stepDX=0; }
+  else if(stepDX >= STEP){ G.cursor=(G.cursor-1+S.stock.length)%S.stock.length; renderRail(); G.card.classList.add('dragging'); wLastStepX=x; stepDX=0; }
+
+  G.card.style.transform=`translate(${stepDX}px, ${totalDY}px) rotate(${stepDX*0.06}deg)`;
+  const off = sideOffset();
+  const prev=$('rail').querySelector('.wcard--side.prev');
+  const next=$('rail').querySelector('.wcard--side.next');
+  if(prev) prev.style.transform=`translateX(${-off+stepDX*0.32}px) scale(.84) rotate(-4deg)`;
+  if(next) next.style.transform=`translateX(${ off+stepDX*0.32}px) scale(.84) rotate( 4deg)`;
+  const giveEl=G.card.querySelector('[data-give]');
+  if(giveEl) giveEl.style.opacity = totalDY<-30 ? Math.min(1,(-totalDY-30)/60) : 0;
+}
+function wEnd(){
+  if(!wDragging || !G.card) return;
+  wDragging=false; G.card.classList.remove('dragging');
+  const totalDY = wLastY-wOriginY;
+  if(!wMoved){ G.card.style.transform=''; resetSides(); openWeaponDetail(S.stock[G.cursor]); return; }
+  if(totalDY < -givePx()){ doGive(); return; }
+  G.card.style.transform=''; resetSides();
+  const giveEl=G.card.querySelector('[data-give]');
+  if(giveEl) giveEl.style.opacity=0;
+}
+function resetSides(){
+  const prev=$('rail').querySelector('.wcard--side.prev');
+  const next=$('rail').querySelector('.wcard--side.next');
+  if(prev) prev.style.transform='';
+  if(next) next.style.transform='';
+}
+
+/* ── 건넨다 — 두 장이 합쳐진다 ── */
+function doGive(){
+  G.locked = true;
+  const w = S.stock[G.cursor], h = G.heroes[G.idx];
+  const card = G.card;
+  const phone = document.querySelector('.phone');
+  const hc = $('heroCard');
+  const dlg = $('bubble');
+  const mood = moodOf(h, w);
+  const react = reactionOf(h, w, h.dest);
+
+  // 건네는 순간 대여가 확정된다 — 지도는 곧바로 그 사실을 안다
+  S.pending.push({ hero:h, weapon:w, dungeon:h.dest, react, said: h._sp ? h._sp.clue : '' });
+  renderLoansDrawer();
+
+  if(dlg){ dlg.style.transition='opacity .16s ease'; dlg.style.opacity='0'; dlg.style.pointerEvents='none'; }
+
+  // 도착 지점은 오직 하나 — 용사 카드의 위치
+  const pr = phone.getBoundingClientRect();
+  const hr = hc.getBoundingClientRect();
+  const targetCX = hr.left+hr.width/2, targetCY = hr.top+hr.height/2;
+  const targetLocalX = targetCX-pr.left, targetLocalY = targetCY-pr.top;
+
+  $('rail').querySelectorAll('.wcard--side').forEach(s=>{
+    s.style.transition='transform .3s ease, opacity .3s ease'; s.style.opacity='0';
+  });
+
+  // 1) 윈드업 — 제자리로 돌아가며 살짝 부푼다
+  card.style.transition='transform .15s cubic-bezier(.4,0,.7,.2)';
+  card.style.transform='scale(1.05)';
+
+  // 2) 윈드업이 끝난 뒤 다시 재고 튕겨나간다.
+  //    드래그로 밀린 상태에서 재면 그만큼 도착점이 어긋난다.
+  setTimeout(()=>{
+    const rest = card.getBoundingClientRect();
+    const tx = targetCX - (rest.left + rest.width/2);
+    const ty = targetCY - (rest.top  + rest.height/2);
+    card.style.transition='transform .42s cubic-bezier(.3,1.6,.5,1)';
+    card.style.transform=`translate(${tx}px, ${ty}px) scale(.62)`;
+  }, 170);
+
+  hc.style.transition='transform .3s ease, opacity .18s ease';
+  setTimeout(()=>{
+    hc.style.transform='scale(.94)';
+    setTimeout(()=>{ hc.style.transform=''; }, 130);
+  }, 510);
+
+  // 3) 두 장이 합쳐져 대여 카드로 떠오른다
+  setTimeout(()=>{
+    $('rail').innerHTML=''; G.card=null;
+    hc.style.opacity='0';
+
+    const overlay=$('mergeOverlay'), wrap=$('mergeCardWrap'), bubble=$('mergeBubble');
+    bubble.classList.remove('show'); bubble.removeAttribute('style');
+    bubble.className=`merge-bubble ${mood}`;
+    $('mergeMood').textContent = MOOD_LABEL[mood];
+    $('mergeLine').textContent = MOOD_LINE[mood][(G.idx + S.day) % MOOD_LINE[mood].length];
+
+    wrap.innerHTML=''; wrap.appendChild(makeLoanCard(h, w, true));
+
+    const wrapW=wrap.offsetWidth, wrapH=wrap.offsetHeight;
+    const prNow=phone.getBoundingClientRect();
+    const bubbleH=bubble.offsetHeight || 56;
+    const PAD=16, GAP=14;
+    let cardTop = targetLocalY - wrapH/2;
+    const maxTop = prNow.height - PAD - bubbleH - GAP - wrapH;
+    cardTop = Math.max(PAD, Math.min(cardTop, Math.max(PAD, maxTop)));
+    let cardLeft = Math.max(PAD, Math.min(targetLocalX - wrapW/2, prNow.width - PAD - wrapW));
+
+    wrap.style.position='absolute'; wrap.style.left=cardLeft+'px';
+    wrap.style.top=cardTop+'px'; wrap.style.margin='0';
+    bubble.style.left=(cardLeft + wrapW/2)+'px';
+    bubble.style.top =(cardTop + wrapH)+'px';
+
+    overlay.classList.add('show');
+    requestAnimationFrame(()=>bubble.classList.add('show'));
+    setTimeout(()=>closeMergeToMap(h, w, react), 1450);
+  }, 630);
+
+  S.stock = S.stock.filter(x=>x.id !== w.id);
+  setTimeout(nextHero, 2660);
+}
+
+/* 대여 카드는 지도로 간다 — 저녁에 저 길 위로 올라갈 것이다 */
+function closeMergeToMap(h, w, react){
+  const overlay=$('mergeOverlay'), wrap=$('mergeCardWrap'), bubble=$('mergeBubble');
+  const phone=document.querySelector('.phone');
+  const pr=phone.getBoundingClientRect();
+  const wr=wrap.getBoundingClientRect();
+  const btn=$('mapBtn');
+  const bRect=btn.getBoundingClientRect();
+
+  bubble.style.transition='opacity .2s ease, transform .2s ease';
+  bubble.style.transform='translate(-50%, 24px) scale(.94)';
+  bubble.style.opacity='0';
+
+  overlay.style.background='rgba(10,8,7,0)';
+  wrap.style.position='absolute';
+  wrap.style.left=(wr.left-pr.left)+'px';
+  wrap.style.top=(wr.top-pr.top)+'px';
+  wrap.style.margin='0';
+  wrap.style.transition='transform .5s cubic-bezier(.4,.15,.2,1), opacity .5s';
+  requestAnimationFrame(()=>{
+    const dx=(bRect.left+bRect.width/2)-(wr.left+wr.width/2);
+    const dy=(bRect.top +bRect.height/2)-(wr.top +wr.height/2);
+    wrap.style.transform=`translate(${dx}px, ${dy}px) scale(.2) rotate(-4deg)`;
+    wrap.style.opacity='0';
+  });
+
+  setTimeout(()=>{
+    overlay.classList.remove('show'); overlay.style.background='';
+    wrap.innerHTML=''; wrap.removeAttribute('style'); bubble.removeAttribute('style');
+  }, 560);
+}
+
+function makeLoanCard(h, w, big){
+  const el = document.createElement('div');
+  el.innerHTML = loanCardHTML({
+    hero:h, weapon:w, said:h._sp ? h._sp.clue : '', state:'pending'
+  }, { big });
+  return el.firstElementChild;
+}
+
+let closingShown = false;
+
+function showClosingScreen(){
+  if(closingShown || S.phase === 'closing') return;
+  closingShown = true;
+  S.phase = 'closing';
+  G.locked = true;
+  $('talk').classList.remove('show');
+  $('greet').classList.remove('on','peek');
+  showPage(false);
+
+  const allRented = S.stock.length === 0 && S.pending.length > 0;
+  $('closingTitle').textContent = allRented ? '모든 무기를 빌려주었다' : '오늘의 접객이 끝났다';
+  $('closingDesc').textContent = allRented
+    ? '선반이 비었다. 오늘 장사는 여기까지다. 문을 닫고 빌려준 무기들이 향하는 곳을 확인한다.'
+    : '더 기다리는 용사가 없다. 문을 닫고 오늘 길에 오를 이들을 확인한다.';
+  $('closingCount').textContent = S.pending.length;
+  const btn = $('closeShopBtn');
+  btn.disabled = false;
+  btn.textContent = '문을 닫고 던전 지도를 본다';
+
+  const screen = $('closing');
+  screen.classList.remove('leaving');
+  requestAnimationFrame(()=>screen.classList.add('on'));
+}
+
+function beginNightMap(){
+  const screen = $('closing');
+  const btn = $('closeShopBtn');
+  if(!screen.classList.contains('on') || btn.disabled) return;
+  btn.disabled = true;
+  btn.textContent = '지도를 펼치는 중…';
+  screen.classList.add('leaving');
+
+  renderMap();
+  scrollToShop(false);
+  setTimeout(()=>{
+    screen.classList.remove('on');
+    runSequence();
+    setTimeout(()=>{
+      screen.classList.remove('leaving');
+      closingShown = false;
+    }, 420);
+  }, 620);
+}
+
+function nextHero(){
+  $('talk').classList.remove('show');
+  G.idx++; G.cursor=0; G.locked=false;
+  if(!S.stock.length && S.pending.length){
+    showClosingScreen();
+    return;
+  }
+  renderHero();
+  if(G.idx < G.heroes.length) renderRail(0);
+}
+
+function endGreet(){
+  showClosingScreen();
+}
+
+/* ── 상세 ── */
+function openHeroDetail(h){
+  $('sheetPanel').style.setProperty('--accent', h.accent);
+  $('sheetPanel').innerHTML = `
+    <div class="sheet__grip"></div>
+    <div class="sheet__title" style="color:${h.accent}">${h.name}</div>
+    <div class="sheet__turn">${h.dispo} · 숙련 ${h.skill}</div>
+    <div class="sheet__k">그가 한 말</div>
+    <div class="sheet__log">${h._sp ? h._sp.clue + '<br>' + h._sp.tail : '—'}</div>
+    <div class="sheet__k">성향이 뜻하는 것</div>
+    <div class="sheet__log">${
+      h.dispo==='무모' ? '무기를 험하게 쓴다. 닳는 속도가 빠르다.' :
+      h.dispo==='신중' ? '무기를 아낀다. 덜 닳지만 깊이 들어가지 않는다.' :
+                         '무리하지도, 사리지도 않는다.'}</div>`;
+  $('sheet').classList.add('on');
+}
+function openWeaponDetail(w){
+  $('sheetPanel').style.setProperty('--accent', GRADE[w.grade].c);
+  $('sheetPanel').innerHTML = `
+    <div class="sheet__grip"></div>
+    <div class="sheet__title" style="color:${GRADE[w.grade].c}">${w.name}</div>
+    <div class="sheet__turn">${GRADE[w.grade].l} · ${w.type}</div>
+    <div class="sheet__k">수치</div>
+    <div class="sheet__log">공격 ${w.atk} · 내구 ${w.dur}/${w.durMax}</div>
+    <div class="sheet__k">취성</div>
+    <div class="sheet__log">${w.brit}% — 담금질에서 정해진 값. 여정마다 부러질 확률로 남는다.</div>`;
+  $('sheet').classList.add('on');
+}
+
+/* ═══════════ [§scr.peek] 지도 보기 ═══════════
+   접객 중에 지도를 펼쳐 본다. 소문은 던전 카드 뒷면에 있다. */
+/* 상점에서 지도를 펼쳐 본다. 돌아갈 곳이 접객이 아니라 상점이다. */
+function openShopPeek(){
+  S.peekFrom = 'shop';
+  S.peeking = true;
+  showPage(false);
+  $('mapBackBtn').classList.remove('hidden');
+  renderLoansDrawer();
+  $('ldrawer').classList.add('on');
+  toggleDrawer(true);   // 지도 하단은 대여 카드 목록이 자리 잡은 영역이다 — 열린 채로 시작한다
+  scrollToShop();
+}
+
+function openPeek(){
+  S.peekFrom = 'greet';
+  S.peeking = true;
+  $('greet').classList.add('peek');
+  $('mapBackBtn').classList.remove('hidden');
+  showPage(false);
+  renderLoansDrawer();
+  $('ldrawer').classList.add('on');
+  toggleDrawer(true);
+  scrollToShop();
+}
+function closePeek(){
+  S.peeking = false;
+  closeDnodeFocus();
+  $('mapBackBtn').classList.add('hidden');
+  $('ldrawer').classList.remove('on','open');
+  if(S.peekFrom === 'shop'){ showPage(true); return; }
+  $('greet').classList.remove('peek');
+  if(S.phase === 'greet') renderTopBtns();
+}
+
+/* ═══════════ [§scr.ldrawer] 지도 하단 대여 카드 영역 ═══════════
+   지도를 여는 목적 자체가 이 목록을 보는 것이다 — 기본값으로 펼쳐진다.
+   카드를 누르면 그 토큰이 있는 높이로 지도가 움직인다.
+   목록과 지도가 같은 것을 가리키게 만든다.               */
+function renderLoansDrawer(){
+  const n = S.out.length + S.pending.length;
+  $('ldrawerCount').textContent = n ? `${n}자루` : '';
+
+  const pend = S.pending.map(p => loanCardHTML({
+    hero:p.hero, weapon:p.weapon, said:p.said, state:'pending'
+  }, { map:true }));
+  const out = S.out.slice().sort((a,b)=>
+    (DUNGEONS[a.dungeon].turns - a.elapsed) - (DUNGEONS[b.dungeon].turns - b.elapsed)
+  ).map(o => loanCardHTML({
+    id:o.id, hero:o.hero, weapon:o.weapon, said:o.said, state:'out',
+    dungeon:o.dungeon, left:DUNGEONS[o.dungeon].turns - o.elapsed, ago:S.day - o.dispatchDay
+  }, { map:true }));
+
+  $('ldrawerBody').innerHTML = n ? `
+    <section class="loans__group">
+      <div class="loans__k">대여 카드 · 좌우로 넘겨 본다</div>
+      <div class="loans__rail">${pend.join('')}${out.join('')}</div>
+    </section>
+  ` : `<div class="loans__none">지금 나가 있는 것이 없다.</div>`;
+
+  $('ldrawerBody').querySelectorAll('.loan-card[data-tok]').forEach(card=>{
+    card.onclick = ()=>{
+      const o = S.out.find(x=>x.id === card.dataset.tok);
+      if(!o) return;
+      scrollToY(tokenY(o) + 16);
+      const t = document.getElementById('tok-'+o.id);
+      if(t){ t.classList.remove('ping'); void t.offsetWidth; t.classList.add('ping'); }
+    };
+  });
+}
+function toggleDrawer(force){
+  const d = $('ldrawer');
+  const willOpen = force !== undefined ? force : !d.classList.contains('open');
+  d.classList.toggle('open', willOpen);
+}
+
+/* ═══════════ [§scr.loans] 대여 목록 ═══════════
+   지금 남의 손에 있는 것들. 결과는 어디에도 없다.
+   오늘 건넨 것은 아직 출발하지 않았고, 목적지도 알 수 없다.
+   길에 오른 뒤에야 어디로 갔는지 드러난다.            */
+function loanCardHTML(o, options={}){
+  const { big=false, map=false } = options;
+  const g = GRADE[o.weapon.grade];
+  const D = o.dungeon ? DUNGEONS[o.dungeon] : null;
+  const seamW = big ? 212 : 186;
+  const seed = `${o.weapon.id}-seam-${o.id || o.hero.name}-${big?'big':'base'}`;
+  const foot = o.state === 'out'
+    ? `<div class="loan-card__foot loan-card__foot--split">
+         <span class="loan-card__place" style="color:${D.accent}">${dungeonName(o.dungeon)}</span>
+         <span class="loan-card__wait">${o.left>0 ? `${dayWord(o.left)} 남았다` : '오늘 돌아온다'}<br>${o.ago}일째</span>
+       </div>`
+    : `<div class="loan-card__foot">저녁에 길을 오른다</div>`;
+  return `<div class="loan-card${big?' loan-card--big':''}${map?' loan-card--map':''}"${o.id ? ` data-tok="${o.id}"` : ''}>
+    <div class="loan-said">${o.said || ''}</div>
+    <div class="loan-half">
+      <div class="loan-half__ico" style="color:${o.hero.accent}">${ICON.hero}</div>
+      <div class="loan-half__txt">
+        <div class="loan-half__name">${o.hero.name}</div>
+        <div class="loan-half__sub">${o.hero.dispo} · 숙련 ${o.hero.skill}</div>
+      </div>
+    </div>
+    ${crackSVG(seed, seamW, 'loan-seam')}
+    <div class="loan-half">
+      <div class="loan-half__ico" style="color:${g.c}">${WSIL[o.weapon.type]}</div>
+      <div class="loan-half__txt">
+        <div class="loan-half__name">${o.weapon.name}</div>
+        <div class="loan-half__sub">${g.l} · 취성 ${o.weapon.brit}%</div>
+      </div>
+      <div class="loan-half__num">${o.weapon.atk}</div>
+    </div>
+    ${foot}
+  </div>`;
+}
+
+/* ═══ [§scr.map] 지도 렌더 ═══ */
+function laneTop(name){ return NODE_Y[DUNGEONS[name].turns] + NODE_H; }
+
+/* 토큰이 쉬어 가는 지점 — 이정표가 서는 자리 */
+function stepY(turns, elapsed){
+  const inside = NODE_Y[turns] + NODE_H/2 - 16;
+  const start  = SHOP_Y - 34;
+  return start - Math.min(1, elapsed/turns) * (start - inside);
+}
+
+/* ═══ 지형 배경 — 한 번만 그린다 ═══
+   위로 갈수록 암반이 촘촘해지고 어두워진다. 상태 정보는 담지 않는다. */
+function buildBackdrop(){
+  const W = 390, H = MAP_H, rand = mulberry32(20260808);
+  let g = '';
+
+  // 암반 층리 — 위(깊은 곳)일수록 진하고 촘촘하게
+  const rows = 30;
+  for(let i=0;i<rows;i++){
+    const t = i/rows;
+    const y = 26 + t*(H-90) + rand()*12;
+    let d = `M0,${y.toFixed(1)}`;
+    for(let x=48;x<=W;x+=48){
+      d += ` Q${(x-24)},${(y + rand()*11-5.5).toFixed(1)} ${x},${(y + rand()*9-4.5).toFixed(1)}`;
+    }
+    const op = (0.20 * (1-t) + 0.03).toFixed(3);
+    g += `<path d="${d}" stroke="#463b31" stroke-width="${(0.8+rand()*1.3).toFixed(1)}" fill="none" opacity="${op}"/>`;
+  }
+
+  // 바위 알갱이
+  for(let i=0;i<110;i++){
+    const y = rand()*H, x = rand()*W, t = 1 - y/H;
+    g += `<circle cx="${x.toFixed(0)}" cy="${y.toFixed(0)}" r="${(0.6+rand()*1.5).toFixed(1)}"
+           fill="#554839" opacity="${(0.05 + t*0.13).toFixed(3)}"/>`;
+  }
+
+  // 길 — 던전에서 상점까지. 곧게가 아니라 굽어서 내려온다.
+  Object.entries(DUNGEONS).forEach(([name, D])=>{
+    if(!D.unlocked) return;
+    const x = LANE_X[D.lane];
+    const top = NODE_Y[D.turns] + NODE_H - 4;
+    const bot = SHOP_Y - 2;
+    const r2 = mulberry32(seedOf(name));
+    let d = `M${x},${bot}`;
+    const segs = Math.max(3, Math.round((bot-top)/95));
+    for(let i=1;i<=segs;i++){
+      const yy = bot - (bot-top)*(i/segs);
+      const amp = 9 * Math.sin(i*1.7 + r2()*2);
+      d += ` Q${(x+amp*1.5).toFixed(0)},${(yy + (bot-top)/segs/2).toFixed(0)} ${(x+amp*0.35).toFixed(0)},${yy.toFixed(0)}`;
+    }
+    // 길바닥 — 두껍고 어둡게 깔고, 그 위에 파선
+    g += `<path d="${d}" stroke="#2c251f" stroke-width="13" fill="none" stroke-linecap="round" opacity=".55"/>`;
+    g += `<path d="${d}" stroke="${D.accent}" stroke-width="1.3" fill="none"
+           stroke-dasharray="3 8" stroke-linecap="round" opacity=".26"/>`;
+    // 길가 자갈
+    for(let i=0;i<16;i++){
+      const yy = bot - (bot-top)*r2();
+      const off = (r2()<.5?-1:1) * (9 + r2()*8);
+      g += `<circle cx="${(x+off).toFixed(0)}" cy="${yy.toFixed(0)}" r="${(0.9+r2()*1.4).toFixed(1)}"
+             fill="#5b4d3d" opacity="${(0.16+r2()*0.2).toFixed(2)}"/>`;
+    }
+  });
+
+  // 상점 앞 지반선
+  g += `<path d="M12,${SHOP_Y-1} H378" stroke="#5c5142" stroke-width="1" opacity=".5"/>`;
+  g += `<rect x="0" y="${SHOP_Y}" width="${W}" height="${H-SHOP_Y}" fill="#0e0b09" opacity=".45"/>`;
+
+  return `<svg class="backdrop" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${g}</svg>`;
+}
+
+function renderMap(){
+  const inner = $('mapInner');
+  inner.style.height = MAP_H + 'px';
+  inner.querySelectorAll('.backdrop,.dnode,.rumor,.tick,.milestone,.mist,.ember').forEach(el=>el.remove());
+  $('shopBar').style.top = SHOP_Y + 'px';
+
+  inner.insertAdjacentHTML('afterbegin', buildBackdrop());
+
+  // 깊은 곳의 안개
+  [140, 330, 560].forEach((y,k)=>{
+    const m = document.createElement('div');
+    m.className = 'mist'; m.style.top = y+'px';
+    m.style.animationDelay = (k*-7)+'s';
+    inner.appendChild(m);
+  });
+
+  // 깊이 눈금 — 해금 여부와 무관하게 축 자체를 보여준다
+  [1,2,3].forEach(t=>{
+    const tk = document.createElement('div');
+    tk.className = 'tick';
+    tk.style.top = (NODE_Y[t] + NODE_H + 14) + 'px';
+    tk.textContent = dayWord(t);
+    inner.appendChild(tk);
+  });
+
+  Object.entries(DUNGEONS).forEach(([name, D])=>{
+    if(!D.unlocked){
+      if(D.rumored){
+        const r = document.createElement('div');
+        r.className = 'rumor on';
+        r.style.left = (LANE_X[D.lane]-59) + 'px';
+        r.innerHTML = `${dungeonName(name)}<small>소문뿐</small>`;
+        inner.appendChild(r);
+      }
+      return;
+    }
+    const top = NODE_Y[D.turns];
+
+    // 이정표 — 하루치가 어디서 끊기는지 길 위에 새겨둔다
+    for(let i=1;i<D.turns;i++){
+      const ms = document.createElement('div');
+      ms.className = 'milestone';
+      ms.style.left = (LANE_X[D.lane] + 15) + 'px';
+      ms.style.top  = (stepY(D.turns, i) + 6) + 'px';
+      ms.innerHTML = MILESTONE;
+      inner.appendChild(ms);
+    }
+
+    // 화룡 소굴 — 입구에서 잔불이 올라온다
+    if(name === '화룡 소굴'){
+      for(let i=0;i<4;i++){
+        const e = document.createElement('div');
+        e.className = 'ember';
+        e.style.left = (LANE_X[D.lane] - 14 + i*9) + 'px';
+        e.style.top  = (top + NODE_H - 6) + 'px';
+        e.style.animationDelay = (i*1.35)+'s';
+        inner.appendChild(e);
+      }
+    }
+
+    const n = document.createElement('div');
+    n.className = 'dnode' + (D.justUnlocked ? ' new' : '');
+    D.justUnlocked = false;
+    n.style.left = LANE_X[D.lane] + 'px';
+    n.style.top  = top + 'px';
+    n.dataset.name = name;
+    n.style.setProperty('--accent', D.accent);
+    const kws = D.keys.filter(k=>D.known.has(k));
+    const logLine = kws.length
+      ? kws.slice(0,3).join(' · ')
+      : '아직 아무도 보내지 않았다';
+    const keyHTML = D.keys.map(k=>
+      D.known.has(k) ? `<span class="key">${k}</span>` : `<span class="key key--q">?</span>`).join('');
+    const lootHTML = D.loot.map(l=>
+      D.lootKnown.has(l) ? `<span class="loot">${l}</span>` : `<span class="loot loot--q">?</span>`).join('');
+    const rumors = D.log.slice().reverse();
+
+    n.innerHTML = `
+      <div class="dnode__inner">
+        <div class="dnode__face dnode__front">
+          <div class="dnode__accent"></div>
+          <div class="dnode__body">
+            <div class="dnode__ico">${DICON[name] || ICON.dungeon}</div>
+            <div class="dnode__name">${dungeonName(name)}</div>
+            <div class="dnode__turn">${dayWord(D.turns)} 걸린다</div>
+          </div>
+          ${crackSVG(name, 112, 'dnode__seam')}
+          <div class="dnode__body" style="padding-top:5px">
+            <div class="dnode__log">${logLine}</div>
+          </div>
+        </div>
+        <div class="dnode__face dnode__back">
+          <div class="dnode__accent"></div>
+          <div class="dback">
+            <div class="dback__head">
+              <span class="dback__name">${dungeonName(name)}</span>
+              <span class="dback__k">소 문</span>
+            </div>
+            <div class="dback__keys">${keyHTML}</div>
+            <div class="dback__loot">${lootHTML}</div>
+            <div class="dback__list">
+              ${rumors.length ? rumors.map(e=>`
+                <div class="dback__row">
+                  <div class="dback__meta">DAY ${e.day} · ${e.hero}</div>
+                  <div class="dback__quote">${e.text}</div>
+                </div>`).join('')
+                : `<div class="dback__empty">아직 아무도 돌아오지 않았다.</div>`}
+            </div>
+            <div class="dback__sum">${D.sent}번 보냈고, ${D.lost}명이 돌아오지 않았다.</div>
+          </div>
+        </div>
+      </div>`;
+    n.onclick = e=>{ e.stopPropagation(); openDnodeFocus(n, name); };
+    inner.appendChild(n);
+  });
+  renderTokens();
+  updateHint();
+
+  // 새로 열린 곳은 화면 밖 어둠 속에 있다 — 거기까지 올려서 보여준다
+  if(S.revealNode){
+    const y = NODE_Y[DUNGEONS[S.revealNode].turns] + NODE_H/2;
+    S.revealNode = null;
+    setTimeout(()=>scrollToY(y), 260);
+  }
+}
+
+/* ═══ [§scr.dfocus] 던전 카드를 가운데로 불러내기 ═══
+   지도에서 카드를 탭하면, 같은 카드를 dfocus 층에서 다시 그려
+   원래 자리 위치에서 시작해 화면 가운데로 이동하며 동시에 뒤집는다.
+   .dnode.flipped 의 width/rotateY 전환을 그대로 재사용한다.       */
+let DFOCUS = null;   // { node, clone, dx, dy }
+
+function openDnodeFocus(node, name){
+  if(DFOCUS) return;
+  const df = $('dfocus');
+  const dfR = df.getBoundingClientRect();
+  const nr  = node.getBoundingClientRect();
+
+  const clone = node.cloneNode(true);
+  clone.classList.remove('new');
+  clone.classList.add('dfocus-card');
+  clone.removeAttribute('style');
+
+  // 원래 자리와 가운데 사이의 거리 — 여기서 시작해 0으로 좁혀지며 이동한다
+  const dx = (nr.left + nr.width/2) - (dfR.left + dfR.width/2);
+  const dy = (nr.top  + nr.height/2) - (dfR.top  + dfR.height/2);
+  clone.style.width = nr.width + 'px';
+  clone.style.transition = 'none';
+  clone.style.transform = `translate(-50%,-50%) translate(${dx}px, ${dy}px)`;
+
+  df.innerHTML = ''; df.appendChild(clone);
+  df.classList.add('on');
+  node.style.visibility = 'hidden';   // 원래 카드는 숨겨 중복을 막는다
+  DFOCUS = { node, clone, dx, dy };
+
+  void clone.offsetWidth;   // 강제 리플로우 — 시작 위치가 실제로 반영되게
+  requestAnimationFrame(()=>{
+    clone.style.transition = '';
+    clone.style.transform = 'translate(-50%,-50%)';
+    clone.classList.add('flipped');   // 이동과 동시에 뒤집힌다
+  });
+}
+
+function closeDnodeFocus(){
+  if(!DFOCUS) return;
+  const { node, clone, dx, dy } = DFOCUS;
+  clone.classList.remove('flipped');
+  clone.style.transform = `translate(-50%,-50%) translate(${dx}px, ${dy}px)`;
+  setTimeout(()=>{
+    $('dfocus').classList.remove('on');
+    $('dfocus').innerHTML = '';
+    node.style.visibility = '';
+    DFOCUS = null;
+  }, 520);
+}
+$('dfocus').addEventListener('click', e=>{ if(e.target.id === 'dfocus') closeDnodeFocus(); });
+
+/* ── 스크롤 제어 ── */
+function scrollToY(y, smooth=true){
+  const m = $('map');
+  const target = Math.max(0, Math.min(MAP_H - m.clientHeight, y - m.clientHeight/2));
+  m.scrollTo({ top:target, behavior: smooth ? 'smooth' : 'auto' });
+}
+function scrollToShop(smooth=true){
+  const m = $('map');
+  m.scrollTo({ top: MAP_H - m.clientHeight, behavior: smooth ? 'smooth' : 'auto' });
+}
+function updateHint(){
+  const m = $('map'), h = $('scrollHint');
+  const deepest = S.out.reduce((a,o)=>Math.min(a, tokenY(o)), Infinity);
+  const hasAbove = m.scrollTop > 24;
+  h.classList.toggle('on', hasAbove === false && deepest < m.scrollTop + 40);
+}
+$('map').addEventListener('scroll', ()=>{ $('scrollHint').classList.remove('on'); }, { passive:true });
+
+/* 토큰 위치
+   elapsed 0      → 상점을 막 벗어난 지점
+   elapsed turns  → 던전 카드 한가운데 (= 안으로 들어간 상태) */
+function tokenY(o){
+  const D = DUNGEONS[o.dungeon];
+  const inside = NODE_Y[D.turns] + NODE_H/2 - 16;   // 던전 카드 속
+  const start  = SHOP_Y - 34;
+  const p = Math.min(1, o.elapsed / D.turns);
+  return start - p * (start - inside);
+}
+
+function renderTokens(){
+  const inner = $('mapInner');
+  S.out.forEach(o=>{
+    let el = document.getElementById('tok-'+o.id);
+    if(!el){
+      el = document.createElement('div');
+      el.className = 'token'; el.id = 'tok-'+o.id;
+      el.style.setProperty('--accent', GRADE[o.weapon.grade].c);
+      el.innerHTML = `<div class="token__glyph">${WSIL[o.weapon.type]}</div>
+                      <div class="token__step">${o.elapsed}/${DUNGEONS[o.dungeon].turns}</div>`;
+      inner.appendChild(el);
+    }
+    el.querySelector('.token__step').textContent = `${o.elapsed}/${DUNGEONS[o.dungeon].turns}`;
+    el.style.left = LANE_X[DUNGEONS[o.dungeon].lane] + 'px';
+    el.style.top  = tokenY(o) + 'px';
+  });
+}
+
+/* 무기고 — 아침과 저녁이 같은 선반을 본다.
+   저녁에 비어 있는 자리가 곧 지금 내가 노출된 정도다. */
+function armoryHTML(emptyMsg, repairMode=false){
+  if(!S.stock.length) return `<div class="armory__empty">${emptyMsg}</div>`;
+  return `<div class="armory">
+    <div class="armory__rail">${S.stock.map(w=>{
+      const g = GRADE[w.grade];
+      const pct = Math.max(0, Math.min(100, w.dur/w.durMax*100));
+      const col = pct>60?'var(--dur-high)':pct>30?'var(--dur-mid)':'var(--dur-low)';
+      return `<div class="gcard ${w.grade==='unique'?'gcard--unique':''}"
+                   data-w="${w.id}" style="--accent:${g.c}">
+        <div class="gcard__accent"></div>
+        <div class="gcard__thumb">${WSIL[w.type]}</div>
+        <div class="gcard__info">
+          <div class="gcard__grade">${g.l} · ${w.type}</div>
+          <div class="gcard__name">${w.name}</div>
+          <div class="gcard__atk">${w.atk}</div>
+          <div class="gcard__bar"><i style="width:${pct}%; background:${col}"></i></div>
+          <div class="gcard__brit">내구 ${w.dur}/${w.durMax} · 취성 <b>${w.brit}%</b></div>
+        </div>
+        ${repairMode ? `<button class="gcard__repair" data-repair="${w.id}" ${w.dur>=w.durMax?'disabled':''}>${w.dur>=w.durMax?'수리 완료':`수리 +${w.durMax-w.dur}`}</button>` : ''}
+      </div>`;
+    }).join('')}</div>
+  </div>`;
+}
+
+function matsHTML(){
+  const names = Object.keys(S.mats).filter(n=>S.mats[n] > 0);
+  if(!names.length) return `<div class="mats"><div class="mats__none">쓸 것이 남지 않았다.</div></div>`;
+  const total = totalMats();
+  return `<div class="mats">
+    <div class="mats__rail">${names.map(n=>{
+      const M = MATERIALS[n] || { c:'var(--ink-dim)', tier:1 };
+      return `<div class="mat" style="--mc:${M.c}">
+        <span class="mat__gem tier${M.tier}"></span>
+        <span class="mat__n">${n}</span>
+        <span class="mat__c">${S.mats[n]}</span>
+      </div>`;
+    }).join('')}</div>
+    <div class="mats__note">모두 <b>${total}</b>개 · 한 자루에 ${MATS_PER_WEAPON}개가 든다</div>
+  </div>`;
+}
+
+function bindArmory(repairMode=false){
+  document.querySelectorAll('.gcard[data-w]').forEach(el=>{
+    el.onclick = ()=>{
+      const w = S.stock.find(x=>x.id === el.dataset.w);
+      if(w) openWeaponDetail(w);
+    };
+  });
+  if(repairMode){
+    document.querySelectorAll('.gcard__repair[data-repair]').forEach(btn=>{
+      btn.onclick = e=>{
+        e.stopPropagation();
+        const w = S.stock.find(x=>x.id===btn.dataset.repair);
+        if(!w || w.dur>=w.durMax) return;
+        w.dur = w.durMax;
+        toast(`${w.name}의 내구도를 모두 수리했다.`);
+        renderPanel();
+      };
+    });
+  }
+}
+
+function selectedMatCount(name){
+  return forgeSelection.filter(n=>n===name).length;
+}
+
+function forgeGrade(selection){
+  const score = selection.reduce((sum,n)=>sum+(MATERIALS[n]?.tier||1),0);
+  return score >= 8 ? 'unique' : score >= 6 ? 'high' : score >= 4 ? 'mid' : 'common';
+}
+
+function renderForgePopup(){
+  const panel = $('forgePopupPanel');
+  const names = Object.keys(S.mats).filter(n=>S.mats[n] > 0);
+  const slots = Array.from({length:MATS_PER_WEAPON},(_,i)=>{
+    const n = forgeSelection[i];
+    if(!n) return `<div class="forge-slot"><span class="forge-slot__num">${i+1}</span><span class="forge-slot__name">재료 선택</span></div>`;
+    const M = MATERIALS[n] || { c:'var(--ink-dim)', tier:1 };
+    return `<button class="forge-slot filled" data-slot="${i}" style="--mc:${M.c}" title="선택 취소">
+      <span class="forge-slot__gem tier${M.tier}"></span><span class="forge-slot__name">${n}</span>
+    </button>`;
+  }).join('');
+
+  panel.innerHTML = `
+    <div class="forge-popup__head">
+      <span class="forge-popup__ico">${ICON.anvil}</span>
+      <div><div class="forge-popup__title">제작소</div><div class="forge-popup__sub">재료를 3개 골라 모루 위에 올린다.</div></div>
+      <button class="forge-popup__close" id="forgeClose" aria-label="닫기">×</button>
+    </div>
+    <div class="forge-slots">${slots}</div>
+    <div class="forge-popup__k">보 유 재 료</div>
+    <div class="forge-materials">${names.map(n=>{
+      const M = MATERIALS[n] || { c:'var(--ink-dim)', tier:1 };
+      const picked = selectedMatCount(n), left = S.mats[n]-picked;
+      return `<button class="forge-mat${picked?' selected':''}${left<=0?' exhausted':''}" data-mat="${n}" style="--mc:${M.c}">
+        <span class="forge-mat__gem tier${M.tier}"></span>
+        <span class="forge-mat__txt"><span class="forge-mat__name">${n}</span><span class="forge-mat__left">남음 ${left} / ${S.mats[n]}</span></span>
+        ${picked ? `<span class="forge-mat__picked">${picked}</span>` : ''}
+      </button>`;
+    }).join('')}</div>
+    <div class="forge-popup__foot">
+      <button class="forge-start" id="forgeStart" ${forgeSelection.length===MATS_PER_WEAPON?'':'disabled'}>벼리기</button>
+      <div class="forge-start__note">${forgeSelection.length} / ${MATS_PER_WEAPON} 선택</div>
+    </div>`;
+
+  $('forgeClose').onclick = closeForgePopup;
+  panel.querySelectorAll('.forge-slot[data-slot]').forEach(el=>{
+    el.onclick = ()=>{ forgeSelection.splice(Number(el.dataset.slot),1); renderForgePopup(); };
+  });
+  panel.querySelectorAll('.forge-mat[data-mat]').forEach(el=>{
+    el.onclick = ()=>{
+      if(forgeSelection.length >= MATS_PER_WEAPON) return;
+      const n = el.dataset.mat;
+      if(selectedMatCount(n) >= (S.mats[n]||0)) return;
+      forgeSelection.push(n); renderForgePopup();
+    };
+  });
+  $('forgeStart').onclick = startForging;
+}
+
+function openForgePopup(){
+  if(totalMats() < MATS_PER_WEAPON) return;
+  forgeSelection = [];
+  renderForgePopup();
+  $('forgePopup').classList.add('on');
+}
+
+function closeForgePopup(){
+  $('forgePopup').classList.remove('on');
+  forgeSelection = [];
+}
+
+function startForging(){
+  if(forgeSelection.length !== MATS_PER_WEAPON) return;
+  const used = [...forgeSelection];
+  const counts = used.reduce((acc,n)=>{ acc[n]=(acc[n]||0)+1; return acc; },{});
+  const available = Object.entries(counts).every(([n,c])=>c <= (S.mats[n]||0));
+  if(!available){ closeForgePopup(); renderPanel(); return; }
+  used.forEach(n=>{
+    S.mats[n]--;
+    if(S.mats[n] <= 0) delete S.mats[n];
+  });
+  S.stock.push(makeWeapon(forgeGrade(used)));
+  $('forgePopup').classList.remove('on');
+  forgeSelection = [];
+  toast(`${used.join(' · ')}으로 한 자루를 벼렸다.`);
+  renderPanel();
+}
+
+/* ═══ [§scr.page] 상점 · 개봉 ═══
+   상점이 허브다. 지도는 파견하거나 펼쳐 볼 때만 드러난다. */
+function showPage(on){ $('page').classList.toggle('on', on); }
+function setPanel(collapsed){ showPage(!collapsed); }   // 옛 호출부 호환
+
+function renderPanel(){
+  $('dayLabel').textContent = `DAY ${S.day} · 던전 지도`;
+
+  const p = $('panelBody'), acts = $('pageActs');
+  $('pageDay').textContent = `DAY ${S.day}`;
+
+  if(S.phase === 'shop'){
+    const canForge = totalMats() >= MATS_PER_WEAPON;
+    const repairCount = S.stock.filter(w=>w.dur<w.durMax).length;
+    $('shopMapBtn').innerHTML =
+      `<span class="mapbtn__ico">${ICON.map}</span><span class="mapbtn__t">지도</span>`;
+    $('shopMapBtn').onclick = openShopPeek;
+
+    if(shopSection === 'home'){
+      $('pagePhase').textContent = '상점';
+      $('pageSub').innerHTML = '오늘 할 일을 고른다';
+      p.innerHTML = `
+        <div class="shop-hub__intro">무기를 손보고, 재료를 벼리고, 준비가 끝나면 문을 열어 용사를 맞이한다.</div>
+        <div class="doors doors--hub">
+          <div class="door" id="hubArmory">
+            <span class="door__ico">${ICON.loan}</span>
+            <div class="door__txt">
+              <div class="door__t">무기고</div>
+              <div class="door__s">진열 ${S.stock.length}자루 · 수리 필요 ${repairCount}자루</div>
+            </div>
+            <span class="door__go">›</span>
+          </div>
+          <div class="door" id="hubForge">
+            <span class="door__ico">${ICON.anvil}</span>
+            <div class="door__txt">
+              <div class="door__t">제작소</div>
+              <div class="door__s">보유 재료 ${totalMats()}개 · ${canForge?'제작 가능':'재료 부족'}</div>
+            </div>
+            <span class="door__go">›</span>
+          </div>
+          <div class="door" id="hubGreet">
+            <span class="door__ico">${ICON.hero}</span>
+            <div class="door__txt">
+              <div class="door__t">상점 문열기</div>
+              <div class="door__s">${S.guests.length}명이 기다린다 · 하루가 간다</div>
+            </div>
+            <span class="door__go">›</span>
+          </div>
+        </div>`;
+      acts.innerHTML = '';
+      $('hubArmory').onclick = ()=>{ shopSection='armory'; renderPanel(); };
+      $('hubForge').onclick = ()=>{ shopSection='forge'; renderPanel(); };
+      $('hubGreet').onclick = ()=>{ shopSection='home'; showPage(false); startGreet(); };
+
+    } else if(shopSection === 'armory'){
+      $('pagePhase').textContent = '무기고';
+      $('pageSub').innerHTML = `진열된 무기 <b>${S.stock.length}</b>자루 · 수리 필요 <b>${repairCount}</b>자루`;
+      p.innerHTML = `
+        <div class="page__k">무 기 진 열 대</div>
+        ${armoryHTML('선반이 비었다.<br>제작소에서 무기를 벼려야 한다.', true)}`;
+      acts.innerHTML = `<button class="page-back" id="shopSectionBack">‹ 상점으로</button>`;
+      bindArmory(true);
+      $('shopSectionBack').onclick = ()=>{ shopSection='home'; renderPanel(); };
+
+    } else {
+      $('pagePhase').textContent = '제작소';
+      $('pageSub').innerHTML = `소지한 재료 <b>${totalMats()}</b>개`;
+      p.innerHTML = `
+        <div class="page__k">소 지 한 재 료</div>
+        ${matsHTML()}
+        <button class="workshop-create" id="workshopCreate" ${canForge?'':'disabled'}>
+          <span class="workshop-create__ico">${ICON.anvil}</span>
+          <span><span class="workshop-create__title">무기 제작</span><span class="workshop-create__sub">${canForge?'재료 3가지를 골라 벼리기 시작':'무기 한 자루를 만들 재료가 부족하다'}</span></span>
+        </button>`;
+      acts.innerHTML = `<button class="page-back" id="shopSectionBack">‹ 상점으로</button>`;
+      $('workshopCreate').onclick = openForgePopup;
+      $('shopSectionBack').onclick = ()=>{ shopSection='home'; renderPanel(); };
+    }
+    showPage(true);
+
+  } else if(S.phase === 'open'){
+    // open_night.html의 전용 화면에서 봉투를 한 장씩 이어서 연다.
+    showPage(false);
+    startOpenNight();
+
+  } else {
+    // seq · greet — 지도나 접객이 화면을 쓴다
+    showPage(false);
+  }
+}
+
+function sealedHTML(sl, i){
+  const ago = S.day - sl.dispatchDay;
+  return `<div class="sealed ${sl.opened?'opened':''}" data-i="${i}">
+    <div class="sealed__flap"></div>
+    <div class="sealed__wax">封</div>
+    <div class="sealed__label">
+      <div class="sealed__dest">${dungeonName(sl.dungeon)}</div>
+      <div class="sealed__who">${sl.hero.name} · ${sl.weapon.name}</div>
+      <div class="sealed__ago">${ago}일 전에 보냈다</div>
+    </div>
+  </div>`;
+}
+
+/* ═══════════ [§scr.seq] 지도 시퀀스 ═══════════
+   §5  파견(느리게) → 진행(툭툭) → 귀환(빠르게) → 정적
+   지도는 "몇 장이 돌아왔는가"까지만 말하고 입을 다문다.        */
+let outId = 0;
+const TOKEN_MOTION = {
+  stagger:190,
+  dispatch:780,
+  step:380,
+  arrive:540,
+  jump:330
+};
+function runSequence(){
+  S.phase = 'seq'; renderPanel();
+  setPanel(true);                        // 시퀀스 동안은 지도가 화면 전부를 쓴다
+
+  // ① 파견 — 접객에서 건넨 것들
+  const dispatched = [];
+  S.pending.forEach(pd=>{
+    const D = DUNGEONS[pd.dungeon];
+    const o = {
+      id:'o'+(++outId), hero:pd.hero, weapon:pd.weapon, dungeon:pd.dungeon,
+      dispatchDay:S.day, elapsed:0,
+      react: pd.react, said: pd.said,
+      outcome: rollOutcome(pd.hero, pd.weapon, pd.dungeon)   // 지금 확정. 뜯기 전까지 아무도 모른다.
+    };
+    D.sent++;
+    S.out.push(o); dispatched.push(o);
+  });
+  S.pending = []; S.guests = [];
+
+
+  // 파견은 상점에서 시작한다 — 시선을 아래에 고정
+  setTimeout(scrollToShop, 420);
+
+  // 새 토큰을 상점 위치에서 만든 뒤 자리로 올려보낸다
+  dispatched.forEach((o,k)=>{
+    const el = document.createElement('div');
+    el.className='token'; el.id='tok-'+o.id;
+    el.style.setProperty('--accent', GRADE[o.weapon.grade].c);
+    el.style.left = LANE_X[DUNGEONS[o.dungeon].lane]+'px';
+    el.style.top  = SHOP_Y+'px'; el.style.opacity='0';
+    el.style.transition = `top ${TOKEN_MOTION.dispatch}ms cubic-bezier(.4,.15,.2,1), opacity .36s`;
+    el.innerHTML = `<div class="token__glyph">${WSIL[o.weapon.type]}</div>
+                    <div class="token__step">0/${DUNGEONS[o.dungeon].turns}</div>`;
+    $('mapInner').appendChild(el);
+    setTimeout(()=>{ el.style.opacity='1'; el.style.top = tokenY(o)+'px'; }, 420 + k*TOKEN_MOTION.stagger);
+  });
+
+  const dispatchTime = dispatched.length ? 1350 + dispatched.length*TOKEN_MOTION.stagger : 420;
+
+  // 문을 연 순간 하루가 흘렀다. 곧바로 다음 날이 온다.
+  setTimeout(nextDay, dispatchTime + 700);
+}
+
+/* ═══════════ [§scr.arrival] 아침 시퀀스 ═══════════
+   ② 진행 — 나가 있던 것들이 한 칸씩 툭
+   ③ 귀환 — 도착분이 내려온다. 뒤집힌 채, 나간 수만큼.
+   ④ 정적 → 개봉                                            */
+function runArrival(){
+  S.phase = 'seq'; renderPanel(); setPanel(true);
+
+  if(!S.out.length){ setTimeout(openShop, 420); return; }
+
+  setTimeout(()=>{
+    const moving = S.out.slice();
+    moving.forEach((o,k)=>{
+      setTimeout(()=>{
+        o.elapsed++;
+        const D = DUNGEONS[o.dungeon];
+        const el = document.getElementById('tok-'+o.id);
+        if(!el) return;
+        const arrived = o.elapsed >= D.turns;
+        scrollToY(tokenY(o));                     // 움직이는 것을 따라간다
+        el.style.transition = arrived
+          ? `top ${TOKEN_MOTION.arrive}ms cubic-bezier(.4,.15,.2,1)`  // 던전으로 빨려 들어가듯
+          : `top ${TOKEN_MOTION.step}ms cubic-bezier(.34,1.25,.64,1)`;
+        el.classList.add('jump');
+        el.querySelector('.token__step').textContent = `${o.elapsed}/${D.turns}`;
+        el.style.top = tokenY(o) + 'px';          // 도착 턴에는 던전 카드 안까지 간다
+        setTimeout(()=>el.classList.remove('jump'), TOKEN_MOTION.jump);
+        if(arrived){
+          setTimeout(()=>{
+            el.classList.add('inside');
+            const node = [...document.querySelectorAll('.dnode')]
+              .find(n=>n.dataset.name===o.dungeon);
+            if(node){ node.classList.add('swallow'); setTimeout(()=>node.classList.remove('swallow'),1150); }
+          }, 380);
+        }
+      }, k*TOKEN_MOTION.stagger);
+    });
+    const advanceTime = moving.length*TOKEN_MOTION.stagger + 720;
+
+    setTimeout(()=>{
+      const arriving = S.out.filter(o=>o.elapsed >= DUNGEONS[o.dungeon].turns);
+      S.out = S.out.filter(o=>o.elapsed < DUNGEONS[o.dungeon].turns);
+
+      if(!arriving.length){ setTimeout(openShop, 300); return; }
+
+      // ③ 던전 안에 잠시 머문 뒤, 봉투가 실제로 모두 도착할 때까지 기다린다.
+      setTimeout(()=>returnAllEnvelopes(arriving), 950);
+    }, advanceTime);
+  }, 500);
+}
+
+function waitMs(ms){ return new Promise(resolve=>setTimeout(resolve, ms)); }
+
+function prepareReturnStatus(total){
+  const status = $('returnStatus');
+  status.classList.remove('complete');
+  $('returnStack').innerHTML = '';
+  $('returnLabel').textContent = `결과 봉투 0 / ${total}`;
+  status.classList.add('on');
+}
+
+function receiveEnvelope(index, total){
+  const paper = document.createElement('span');
+  paper.className = 'return-status__paper';
+  paper.style.setProperty('--r', `${index%2 ? 4 : -4}deg`);
+  paper.style.setProperty('--y', `${-Math.min(index,5)*3}px`);
+  paper.style.zIndex = index + 1;
+  $('returnStack').appendChild(paper);
+  $('returnLabel').textContent = `결과 봉투 ${index} / ${total}`;
+}
+
+async function returnAllEnvelopes(arriving){
+  S.sealed = arriving.map(o=>({ ...o, opened:false }));
+  prepareReturnStatus(arriving.length);
+
+  const flights = arriving.map((o,k)=>dropEnvelope(o, k, arriving.length));
+  setTimeout(()=>scrollToShop(), 260);
+  await Promise.all(flights);
+
+  const status = $('returnStatus');
+  status.classList.add('complete');
+  $('returnLabel').textContent = '모든 결과 봉투가 돌아왔다';
+  await waitMs(850);
+
+  // 마지막 비행 애니메이션이 끝난 뒤에만 open_night 전용 화면을 연다.
+  enterOpenNight();
+  await waitMs(340);
+  status.classList.remove('on','complete');
+}
+
+/* 결과 봉투 — 토큰 위치에서 화면 하단 회수 더미까지 날아온다 */
+function dropEnvelope(o, index, total){
+  return new Promise(resolve=>{
+    setTimeout(()=>{
+      const D = DUNGEONS[o.dungeon];
+      const wrap = $('mapWrap');
+      const wrapRect = wrap.getBoundingClientRect();
+      const token = document.getElementById('tok-'+o.id);
+      const node = [...document.querySelectorAll('.dnode')].find(n=>n.dataset.name===o.dungeon);
+      const sourceRect = (token || node || wrap).getBoundingClientRect();
+      const dockRect = $('returnStack').getBoundingClientRect();
+      const sx = sourceRect.left + sourceRect.width/2 - wrapRect.left;
+      const sy = sourceRect.top  + sourceRect.height/2 - wrapRect.top;
+      const tx = dockRect.left + dockRect.width/2 - wrapRect.left;
+      const ty = dockRect.top  + dockRect.height/2 - wrapRect.top;
+
+      if(token){ token.classList.add('gone'); setTimeout(()=>token.remove(), 360); }
+
+      const el = document.createElement('div');
+      el.className = 'return-env';
+      el.style.setProperty('--accent', D.accent);
+      el.style.left = sx + 'px';
+      el.style.top = sy + 'px';
+      el.innerHTML = `<div class="return-env__shine"></div>
+        <div class="return-env__body">
+          <div class="return-env__flap"></div>
+          <div class="return-env__accent"></div>
+          <div class="return-env__seal"></div>
+        </div>`;
+      wrap.appendChild(el);
+
+      const finish = ()=>{
+        if(!el.isConnected) return;
+        el.remove();
+        receiveEnvelope(index+1, total);
+        resolve();
+      };
+
+      if(typeof el.animate !== 'function'){
+        el.style.left = tx + 'px'; el.style.top = ty + 'px';
+        setTimeout(finish, 1050);
+        return;
+      }
+
+      const bend = index%2 ? 34 : -34;
+      const flight = el.animate([
+        { left:`${sx}px`, top:`${sy}px`, opacity:0,
+          transform:'translate(-50%,-50%) scale(.72) rotate(-9deg)' },
+        { offset:.12, opacity:1,
+          transform:'translate(-50%,-50%) scale(1) rotate(5deg)' },
+        { offset:.58, left:`${(sx+tx)/2+bend}px`, top:`${Math.min(sy,ty)-46}px`,
+          transform:'translate(-50%,-50%) scale(1.08) rotate(-4deg)' },
+        { left:`${tx}px`, top:`${ty}px`, opacity:1,
+          transform:'translate(-50%,-50%) scale(.82) rotate(0deg)' }
+      ], { duration:1050, easing:'cubic-bezier(.34,.05,.3,1)', fill:'forwards' });
+      flight.finished.then(finish).catch(finish);
+    }, index*280);
+  });
+}
+
+/* 개봉이 끝나야 비로소 하루가 시작된다 */
+function openShop(){
+  S.sealed = [];
+  if(!S.guests.length) S.guests = makeGuests();   // 그날 손님은 이미 정해져 있다
+  S.phase = 'shop';
+  shopSection = 'home';
+  renderMap(); renderPanel(); setPanel(false);
+  if(!S.revealNode) scrollToShop();
+}
+
+/* ═══ [§scr.night] 개봉 — open_night 원본 ═══
+   봉투를 탭해서 뜯는다 → 안쪽 색이 드러난다 → 결과 카드가 뜬다
+   생환 · 파손 → 대여 카드 / 사망 → 색이 빠져나간다          */
+let nightOpening = false;
+
+/* 귀환 완료 전용 전환.
+   setPanel(false)는 상점 페이지를 다시 켜므로 야간 개봉 진입에는 사용하지 않는다. */
+function enterOpenNight(){
+  S.phase = 'open';
+
+  document.body.classList.add('night-open');
+
+  // 지도 위에 남아 있는 화면을 모두 닫고 개봉 화면만 활성화한다.
+  showPage(false);
+  $('greet').classList.remove('on','peek');
+  $('closing').classList.remove('on','leaving');
+  $('sheet').classList.remove('on');
+  $('result').classList.remove('show');
+  $('mapBackBtn').classList.add('hidden');
+
+  startOpenNight();
+}
+
+function startOpenNight(){
+  const R = $('reveal');
+  if(!R.querySelector('.night__stage')){
+    R.innerHTML = `
+      <div class="night__top">
+        <div class="night__day">DAY ${S.day} · 밤 · 개봉</div>
+        <div class="night__queue" id="nightQueue"></div>
+      </div>
+      <div class="night__stage" id="nightStage"></div>
+      <div class="night__hints">
+        <span class="night__hint">봉투를 탭해 뜯는다</span>
+        <div class="night__counter" id="nightCounter"></div>
+      </div>
+      <div class="night-summary" id="nightSummary"></div>`;
+  }
+  R.classList.add('on');
+  renderNightEnvelope();
+}
+
+function renderNightQueue(activeIndex){
+  const q = $('nightQueue');
+  if(!q) return;
+  q.innerHTML = S.sealed.map((sl,i)=>{
+    if(sl.opened) return `<span class="${sl.outcome.kind==='dead'?'dead':'alive'}"></span>`;
+    return `<span class="${i===activeIndex?'on':''}"></span>`;
+  }).join('');
+}
+
+function renderNightEnvelope(){
+  const i = S.sealed.findIndex(sl=>!sl.opened);
+  if(i < 0){ showNightSummary(); return; }
+  openSealed(i);
+}
+
+function openSealed(i){
+  const sl = S.sealed[i];
+  if(!sl || sl.opened) return;
+  S.reading = sl;
+  S.readingIndex = i;
+  nightOpening = false;
+
+  const stage = $('nightStage');
+  const ago = S.day - sl.dispatchDay;
+  stage.innerHTML = `
+    <div class="env enter" id="env">
+      <div class="env__body">
+        <div class="env__inner ${sl.outcome.kind==='dead'?'dead':'alive'}"></div>
+        <div class="env__flap"></div>
+        <div class="env__seal">封</div>
+        <div class="env__label">
+          <div class="env__dest">${dungeonName(sl.dungeon)}</div>
+          <div class="env__who">${sl.hero.name} · ${sl.weapon.name}</div>
+        </div>
+      </div>
+      <div class="env__hint">TAP TO TEAR</div>
+    </div>`;
+  $('nightCounter').textContent = `${i+1} / ${S.sealed.length}`;
+  renderNightQueue(i);
+  $('env').addEventListener('click', tearOpen);
+}
+
+function tearOpen(){
+  const env = $('env');
+  if(!env || nightOpening) return;
+  nightOpening = true;
+  env.classList.add('tearing');
+  setTimeout(()=>{
+    env.classList.remove('tearing');
+    env.classList.add('opened');   // 여기서 비로소 안쪽 색이 드러난다
+  }, 200);
+  setTimeout(showResult, 900);
+}
+
+function showResult(){
+  const sl = S.reading;
+  if(!sl || sl.opened === true) return;
+  sl.opened = true;
+  renderNightQueue(S.readingIndex);
+  const D = DUNGEONS[sl.dungeon];
+  const o = sl.outcome;
+  const g = GRADE[sl.weapon.grade];
+  const ago = S.day - sl.dispatchDay;
+  const env = $('env');
+  if(env) env.classList.add('gone');
+
+  const dead   = o.kind === 'dead';
+  const broken = o.kind === 'broken';
+  const verdict = dead ? '돌아오지 않았다' : '살아 돌아왔다';
+  const before = sl.weapon.dur;
+  const wear   = dead ? 0 : (o.wear || 0);
+  const remain = Math.max(0, before - wear);
+
+  let footHTML;
+  if(dead){
+    footHTML = `<div class="rcard__foot warn"><b>${sl.weapon.name}</b>은(는) 함께 사라졌다</div>`;
+  } else if(broken){
+    footHTML = `<div class="rcard__foot warn">여정 중에 <b>부서졌다</b></div>`;
+  } else {
+    const pctB = (before/sl.weapon.durMax)*100;
+    const pctA = (remain/sl.weapon.durMax)*100;
+    const col = pctA>60?'var(--dur-high)':pctA>30?'var(--dur-mid)':'var(--dur-low)';
+    footHTML = `
+      <div class="rcard__wear">
+        <div class="wear__bar">
+          <div class="wear__lost" data-lost style="left:${pctA}%; width:${pctB-pctA}%;"></div>
+          <div class="wear__fill" data-fill style="width:${pctB}%; background:${col};"></div>
+        </div>
+        <div class="wear__row">
+          <span class="wear__k">내구도</span>
+          <span class="wear__v"><b data-num>${before}</b> / ${sl.weapon.durMax}</span>
+        </div>
+        <div class="wear__drop" data-drop>−${wear}</div>
+      </div>`;
+  }
+
+  const rcard = $('rcard');
+  rcard.className = 'rcard' + (dead ? ' lost' : '');
+  rcard.innerHTML = `
+    <div class="rcard__verdict ${dead?'dead':'alive'}">${verdict}</div>
+    <div class="rcard__half rcard__half--hero rcard__piece--l">
+      <div class="rcard__ico" style="color:${sl.hero.accent}">${ICON.hero}</div>
+      <div>
+        <div class="rcard__name">${sl.hero.name}</div>
+        <div class="rcard__sub" data-result-dungeon>${sl.hero.dispo} · ${dungeonName(sl.dungeon)} · ${ago}일</div>
+        ${dead?'<div class="rcard__gone">돌아오지 못함</div>':''}
+      </div>
+    </div>
+    ${crackSVG(sl.id+'-seam', 212, 'rseam')}
+    <div class="rcard__weaponwrap">
+      ${broken?'<div class="rcard__flash"></div>':''}
+      ${broken?shardsHTML(sl.id):''}
+      ${broken?`<svg class="rcard__crackline" viewBox="0 0 212 110" preserveAspectRatio="none">
+        <path d="${crackVertical(sl.id, 110)}"/></svg>`:''}
+      <div class="rcard__half rcard__half--weapon rcard__piece--r">
+        <div class="rcard__ico" style="color:${g.c}">${WSIL[sl.weapon.type]}</div>
+        <div>
+          <div class="rcard__name">${sl.weapon.name}</div>
+          ${dead?'<div class="rcard__gone">함께 묻힘</div>':''}
+        </div>
+        <div class="rcard__num">${sl.weapon.atk}</div>
+      </div>
+    </div>
+    ${footHTML}`;
+
+  const msg = $('rmsg');
+  msg.className = 'result__msg' + (dead ? ' paper' : '');
+  msg.textContent = dead
+    ? `${sl.hero.name}은(는) 끝내 나오지 않았다. 입구를 지키는 자가 소식을 전해왔다.`
+    : broken
+      ? '"안쪽에서 부러졌네. 미안하이 — 자루만 들고 왔어."'
+      : `"${D.turns>2?'길이 길었어. ':''}날은 좀 상했지만, 돌아왔네."`;
+
+  $('result').classList.add('show');
+
+  // 결과를 세계에 반영한다
+  if(dead){
+    D.lost++;
+  } else {
+    sl.weapon.dur = remain;
+    if(broken){ S.fragments++; gainMat(D, true); }
+    else       { S.stock.push(sl.weapon); gainMat(D, false); }
+    bringBack(sl, D);
+    const resultDungeon = rcard.querySelector('[data-result-dungeon]');
+    if(resultDungeon) resultDungeon.textContent = `${sl.hero.dispo} · ${dungeonName(sl.dungeon)} · ${ago}일`;
+    maybeRumor();
+  }
+
+  // 내구도: 게이지가 물러나며 잃은 구간을 드러내고, 숫자가 세어 내려간다
+  if(!dead && !broken){
+    const fill = rcard.querySelector('[data-fill]');
+    const numEl = rcard.querySelector('[data-num]');
+    const dropEl = rcard.querySelector('[data-drop]');
+    setTimeout(()=>{
+      if(fill) fill.style.width = ((remain/sl.weapon.durMax)*100)+'%';
+      if(dropEl) dropEl.classList.add('show');
+      const lostEl = rcard.querySelector('[data-lost]');
+      if(lostEl) setTimeout(()=>lostEl.classList.add('fade'), 1150);
+      if(numEl){
+        const from=before, to=remain, dur=1000, t0=performance.now();
+        const tick=(t)=>{
+          const p=Math.min(1,(t-t0)/dur), eased=1-Math.pow(1-p,3);
+          numEl.textContent=Math.round(from+(to-from)*eased);
+          if(p<1) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }
+    }, 380);
+  }
+
+  // 부서지는 순간은 카드가 다 뜬 뒤에 터뜨린다
+  if(broken) setTimeout(()=>rcard.classList.add('broken'), 340);
+}
+
+/* 파편 — 무기 블록을 중심으로 사방으로 튄다 */
+function shardsHTML(id){
+  const rand = mulberry32(seedOf(id+'-shard'));
+  let out='';
+  for(let i=0;i<14;i++){
+    const ang = rand()*Math.PI*2, dist = 60 + rand()*110;
+    const sx = (Math.cos(ang)*dist).toFixed(0);
+    const sy = (Math.sin(ang)*dist*0.85 + 40).toFixed(0);
+    const sr = (rand()*720-360).toFixed(0);
+    const delay = (rand()*0.12).toFixed(2);
+    const scale = (0.6+rand()*0.9).toFixed(2);
+    out += `<span class="shard" style="--sx:${sx}px; --sy:${sy}px; --sr:${sr}deg; `
+        +  `animation-delay:${(0.38 + +delay).toFixed(2)}s; transform:scale(${scale});"></span>`;
+  }
+  return out;
+}
+
+/* 세로 균열선 — 무기 블록을 가른다 */
+function crackVertical(id, h){
+  const rand = mulberry32(seedOf(id+'-v'));
+  const segs = 7;
+  let d = `M ${106 + (rand()*16-8)} 0`;
+  for(let i=1;i<=segs;i++){
+    d += ` L ${(106 + (rand()*30-15)).toFixed(1)} ${((h/segs)*i).toFixed(1)}`;
+  }
+  return d;
+}
+
+/* 결과를 닫으면 다음 봉투로 */
+function closeResult(){
+  const res = $('result');
+  if(!res.classList.contains('show')) return;
+  res.classList.remove('show');
+  setTimeout(()=>{
+    S.reading = null;
+    renderNightEnvelope();
+  }, 320);
+}
+
+function showNightSummary(){
+  const stage = $('nightStage');
+  if(stage) stage.innerHTML = '';
+  const counter = $('nightCounter');
+  if(counter) counter.textContent = '';
+  renderNightQueue(-1);
+
+  const alive = S.sealed.filter(sl=>sl.outcome.kind!=='dead').length;
+  const dead = S.sealed.filter(sl=>sl.outcome.kind==='dead').length;
+  const broken = S.sealed.filter(sl=>sl.outcome.kind==='broken').length;
+  const summary = $('nightSummary');
+  summary.innerHTML = `
+    <div class="night-summary__title">하루가 끝났다</div>
+    <div class="night-summary__rows">
+      <div class="night-summary__row alive"><span>돌아온 용사</span><b>${alive}</b></div>
+      <div class="night-summary__row dead"><span>돌아오지 않은 용사</span><b>${dead}</b></div>
+      <div class="night-summary__row"><span>부서진 무기</span><b>${broken}</b></div>
+      <div class="night-summary__row"><span>잃은 무기</span><b>${dead}</b></div>
+    </div>
+    <button class="night-summary__next" id="nightSummaryNext">상점으로</button>`;
+  summary.classList.add('show');
+  $('nightSummaryNext').onclick = finishOpenNight;
+}
+
+function finishOpenNight(){
+  const R = $('reveal');
+  const summary = $('nightSummary');
+  if(summary) summary.classList.remove('show');
+  R.classList.remove('on');
+  setTimeout(()=>{
+    R.innerHTML = '';
+    document.body.classList.remove('night-open');
+    renderMap();
+    openShop();
+  }, 320);
+}
+
+
+/* 무엇을 가져오는가 — 귀한 재료는 드물게 나온다 */
+function gainMat(D, isFragment){
+  const rare = !isFragment && Math.random() < 0.22;
+  const name = rare ? D.loot[1] : D.loot[0];
+  S.mats[name] = (S.mats[name] || 0) + 1;
+  D.lootKnown.add(name);
+  return name;
+}
+/* 턴은 곧 하루다. 화면에는 게임 용어를 쓰지 않는다. */
+const DAY_WORD = { 1:'하루', 2:'이틀', 3:'사흘', 4:'나흘', 5:'닷새' };
+function dayWord(n){ return DAY_WORD[n] || `${n}일`; }
+
+function totalMats(){ return Object.values(S.mats).reduce((a,b)=>a+b, 0); }
+
+/* ═══ [§core.discover] 돌아온 자가 물고 오는 것 ═══
+   키워드 하나 또는 재료 하나. 둘 다 아직 미발견인 것 중에서.
+   그리고 그가 한 말이 장부에 남는다. */
+function bringBack(s, D){
+  const newKeys = D.keys.filter(k=>!D.known.has(k));
+  const newLoot = D.loot.filter(l=>!D.lootKnown.has(l));
+
+  let said = null;
+  if(newKeys.length && (!newLoot.length || Math.random()<.6)){
+    said = newKeys[(Math.random()*newKeys.length)|0];
+    D.known.add(said);
+  } else if(newLoot.length){
+    // 귀한 재료일수록 늦게 나온다
+    const l = (newLoot.length>1 && Math.random()<.75) ? newLoot[0] : newLoot[newLoot.length-1];
+    D.lootKnown.add(l);
+    toast(`${l}을(를) 가져왔다.`);
+  }
+
+  // 장부에는 그가 실제로 한 말이 남는다
+  const kw = said || D.keys.filter(k=>D.known.has(k))[0] || D.keys[0];
+  const cand = D.lines[kw];
+  const text = cand[(Math.random()*cand.length)|0];
+  D.log.push({ day:S.day, hero:s.hero.name, text, keyword:kw });
+  if(said) toast(`새로운 이야기를 들었다 — ${said}`);
+}
+
+/* ═══ [§core.unlock] 소문 해금 ═══ */
+function maybeRumor(){
+  const locked = Object.entries(DUNGEONS).filter(([,d])=>!d.unlocked);
+  if(!locked.length) return;
+  const [name, D] = locked[0];
+  if(!D.rumored){
+    if(Math.random() < .45){ D.rumored = true; toast(`소문 — ${name}에 대한 이야기를 들었다.`); }
+  } else if(Math.random() < .5){
+    D.unlocked = true; D.justUnlocked = true; S.revealNode = name;
+    toast(`${dungeonName(name)}으로 가겠다는 이가 나타났다.`);
+  }
+}
+
+/* ═══ [§core.day] 하루 넘기기 ═══
+   날이 밝으면 먼저 나가 있던 것들이 움직이고, 도착분이 돌아온다.
+   손님은 그 다음이다.                                        */
+function nextDay(){
+  S.day++; S.sealed = [];
+  $('dayLabel').textContent = `DAY ${S.day} · 던전 지도`;
+  runArrival();
+}
+
+function makeGuests(){
+  const dests = Object.entries(DUNGEONS).filter(([,d])=>d.unlocked).map(([n])=>n);
+  const n = 1 + ((Math.random()*2.4)|0);
+  const pool = [...HERO_POOL].sort(()=>Math.random()-.5).slice(0, n);
+  return pool.map(h=>{
+    // 성향이 목적지를 정한다 — 플레이어는 무기만 고른다
+    const sorted = dests.slice().sort((a,b)=>DUNGEONS[a].turns - DUNGEONS[b].turns);
+    let pick;
+    if(h.dispo==='무모')      pick = sorted[Math.min(sorted.length-1, sorted.length-1 - ((Math.random()*1.4)|0))];
+    else if(h.dispo==='신중') pick = sorted[(Math.random()*Math.min(2,sorted.length))|0];
+    else                      pick = sorted[(Math.random()*sorted.length)|0];
+    return { ...h, dest:pick };
+  });
+}
+
+
+$('sheet').onclick = e=>{ if(e.target.id==='sheet') $('sheet').classList.remove('on'); };
+$('forgePopup').onclick = e=>{ if(e.target.id==='forgePopup') closeForgePopup(); };
+
+
+let toastT;
+/* ═══ [§ui.toast] 토스트 ═══ */
+function toast(msg){
+  const t = $('toast'); t.textContent = msg; t.classList.add('on');
+  clearTimeout(toastT); toastT = setTimeout(()=>t.classList.remove('on'), 2000);
+}
+
+$('talk').onclick = ()=>$('talk').classList.remove('show');
+$('mapBackBtn').onclick = closePeek;
+$('closeShopBtn').onclick = beginNightMap;
+$('result').addEventListener('click', closeResult);
+$('ldrawerGrip').onclick = ()=>toggleDrawer();
+
+/* 화면 크기가 바뀌면 카드 무대를 다시 잰다 */
+let _rz;
+window.addEventListener('resize', ()=>{
+  clearTimeout(_rz);
+  _rz = setTimeout(()=>{
+    if(S.phase === 'greet' && !G.locked) syncSideOffset();
+    if(typeof renderMap === 'function' && S.phase !== 'greet') renderMap();
+  }, 140);
+});
+
+/* ═══ [§boot] 시작 ═══ */
+S.guests = makeGuests();
+S.phase = 'shop';
+renderMap(); renderPanel();
+requestAnimationFrame(()=>{ scrollToShop(false); setTimeout(updateHint, 200); });
+</script>
+</body>
+</html>
